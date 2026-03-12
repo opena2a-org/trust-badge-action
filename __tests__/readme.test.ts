@@ -126,6 +126,16 @@ describe('updateBadge', () => {
     expect(secondRun).toBe(firstRun);
   });
 
+  it('handles orphaned start marker (no end marker)', () => {
+    const content = '# My Project\n<!-- opena2a-trust-badge -->\nold stale badge line\n\nDescription.';
+    const result = updateBadge(content, badge);
+    expect(result).toContain(badge);
+    expect(result).toContain('<!-- opena2a-trust-badge -->');
+    expect(result).toContain('<!-- /opena2a-trust-badge -->');
+    expect(result).not.toContain('old stale badge line');
+    expect(result).toContain('Description.');
+  });
+
   it('replaces badge URL pattern without markers', () => {
     const existingBadge = '[![OpenA2A Trust Score](https://registry.opena2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
     const content = `# My Project\n${existingBadge}\n\nDescription.`;
