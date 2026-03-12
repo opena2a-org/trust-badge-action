@@ -92,7 +92,8 @@ async function run(): Promise<void> {
     const packageNameInput = core.getInput('package-name');
     const packageSource = core.getInput('package-source') || 'npm';
     const registryUrl = (core.getInput('registry-url') || 'https://registry.opena2a.org').replace(/\/+$/, '');
-    const createPr = core.getInput('create-pr') !== 'false';
+    const createPr = core.getInput('create-pr') === 'true';
+    const autoMerge = core.getInput('auto-merge') !== 'false';
 
     // Step 1: Detect package name
     const packageName = packageNameInput || detectPackageName();
@@ -148,7 +149,7 @@ async function run(): Promise<void> {
     // Step 5: Commit and optionally create PR
     const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
     if (token && createPr) {
-      await createPullRequest(token, readmePath, trustData);
+      await createPullRequest(token, readmePath, trustData, autoMerge);
     } else if (token) {
       await commitDirectly(token, readmePath, updatedContent);
     } else {
@@ -177,7 +178,8 @@ function setTrustOutputs(
 async function createPullRequest(
   token: string,
   readmePath: string,
-  trustData: { agentId: string; trustScore: number; trustLevel: string; profileUrl: string }
+  trustData: { agentId: string; trustScore: number; trustLevel: string; profileUrl: string },
+  autoMerge: boolean
 ): Promise<void> {
   const octokit = github.getOctokit(token);
   const { owner, repo } = github.context.repo;
@@ -254,7 +256,11 @@ async function createPullRequest(
     });
 
     if (existingPrs.length > 0) {
-      core.info(`Existing PR updated: ${existingPrs[0].html_url}`);
+      const existingPr = existingPrs[0];
+      core.info(`Existing PR updated: ${existingPr.html_url}`);
+      if (autoMerge) {
+        await tryAutoMerge(octokit, owner, repo, existingPr.number, existingPr.html_url);
+      }
       return;
     }
 
@@ -284,9 +290,64 @@ async function createPullRequest(
     });
 
     core.info(`Pull request created: ${pr.html_url}`);
+
+    if (autoMerge) {
+      await tryAutoMerge(octokit, owner, repo, pr.number, pr.html_url);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     core.warning(`Failed to create PR: ${message}. README was updated locally.`);
+  }
+}
+
+async function tryAutoMerge(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  prUrl: string
+): Promise<void> {
+  try {
+    // Try to merge immediately (works when no required reviews or status checks)
+    await octokit.rest.pulls.merge({
+      owner,
+      repo,
+      pull_number: prNumber,
+      merge_method: 'squash',
+    });
+    core.info(`PR #${prNumber} merged automatically.`);
+  } catch (mergeError) {
+    // Immediate merge failed -- try enabling GitHub auto-merge (requires the feature to be enabled on the repo)
+    try {
+      // Get the PR's node ID for the GraphQL mutation
+      const { data: prData } = await octokit.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: prNumber,
+      });
+
+      await octokit.graphql(
+        `mutation($pullRequestId: ID!) {
+          enablePullRequestAutoMerge(input: {
+            pullRequestId: $pullRequestId,
+            mergeMethod: SQUASH
+          }) {
+            pullRequest {
+              autoMergeRequest {
+                enabledAt
+              }
+            }
+          }
+        }`,
+        { pullRequestId: prData.node_id }
+      );
+      core.info(`Auto-merge enabled on PR #${prNumber}. It will merge once requirements are met.`);
+    } catch (autoMergeError) {
+      const message = autoMergeError instanceof Error ? autoMergeError.message : String(autoMergeError);
+      core.info(
+        `PR created but auto-merge not available (branch protection may require reviews). PR: ${prUrl} -- ${message}`
+      );
+    }
   }
 }
 

@@ -21,7 +21,11 @@ inputs:
     required: false
     default: 'https://registry.opena2a.org'
   create-pr:
-    description: 'Create a PR instead of committing directly'
+    description: 'Create a PR instead of committing directly (use if you have branch protection)'
+    required: false
+    default: 'false'
+  auto-merge:
+    description: 'Automatically merge the PR after creation (only applies when create-pr is true)'
     required: false
     default: 'true'
 

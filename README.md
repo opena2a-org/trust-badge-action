@@ -2,7 +2,7 @@
 
 A GitHub Action that automatically adds and updates the OpenA2A trust score badge in your repository's README.
 
-Install once, and the badge stays current. The action looks up your package's trust profile on the [OpenA2A Registry](https://registry.opena2a.org), generates the badge, and opens a PR with the update. The action opens a PR by default (`create-pr: true`). To commit directly to the current branch, set `create-pr: false`.
+Install once, and the badge stays current. The action looks up your package's trust profile on the [OpenA2A Registry](https://registry.opena2a.org), generates the badge, and commits the update directly to the current branch. No PR, no manual merge, no friction.
 
 ## Usage
 
@@ -60,7 +60,8 @@ on:
 | `package-name` | Package name to look up (auto-detected if not provided) | No | |
 | `package-source` | Package source: `npm`, `pypi`, `github` | No | `npm` |
 | `registry-url` | OpenA2A Registry URL | No | `https://registry.opena2a.org` |
-| `create-pr` | Open a PR with the badge update. Set to `false` to commit directly to the current branch. | No | `true` |
+| `create-pr` | Create a PR instead of committing directly (use if you have branch protection) | No | `false` |
+| `auto-merge` | Automatically merge the PR after creation (only applies when `create-pr` is `true`) | No | `true` |
 
 ## Outputs
 
@@ -78,7 +79,37 @@ on:
 2. Looks up the trust profile on the OpenA2A Registry.
 3. Generates the trust badge markdown with a link to the full profile page.
 4. Adds or updates the badge in your README. The action wraps the badge in hidden HTML markers so it can update the same badge on future runs without duplicating it.
-5. Opens a PR with the change (default), or commits directly if `create-pr` is set to `false`.
+5. Commits the change directly (default), or opens a PR if `create-pr` is set to `true`.
+
+## Commit Modes
+
+**Recommended (default): Direct commit, zero friction.**
+A badge update in a README is not a code change. The default commits directly -- no PR, no manual merge, nothing to think about.
+
+```yaml
+- uses: opena2a/trust-badge-action@v1
+  # That's it. Badge updates commit directly.
+```
+
+**With branch protection: PR + auto-merge.**
+If your default branch has protection rules, set `create-pr: true`. The action creates a PR and merges it automatically (squash merge). If required reviews or status checks block the merge, auto-merge is enabled so the PR merges as soon as requirements are met.
+
+```yaml
+- uses: opena2a/trust-badge-action@v1
+  with:
+    create-pr: true
+    # auto-merge: true (default) -- PR is created and merged automatically
+```
+
+**Manual review required: PR only, human merges.**
+For teams that explicitly want a human to review badge changes before they land.
+
+```yaml
+- uses: opena2a/trust-badge-action@v1
+  with:
+    create-pr: true
+    auto-merge: false
+```
 
 ## What If My Package Is Not Found?
 
