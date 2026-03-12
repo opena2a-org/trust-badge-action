@@ -1,0 +1,42 @@
+name: 'OpenA2A Trust Badge'
+description: 'Automatically adds and updates the OpenA2A trust score badge in your README'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  readme-path:
+    description: 'Path to README file'
+    required: false
+    default: 'README.md'
+  package-name:
+    description: 'Package name to look up (auto-detected from package.json if not provided)'
+    required: false
+  package-source:
+    description: 'Package source: npm, pypi, github'
+    required: false
+    default: 'npm'
+  registry-url:
+    description: 'OpenA2A Registry URL'
+    required: false
+    default: 'https://registry.opena2a.org'
+  create-pr:
+    description: 'Create a PR instead of committing directly'
+    required: false
+    default: 'true'
+
+outputs:
+  trust-score:
+    description: 'Current trust score (0-100)'
+  trust-level:
+    description: 'Current trust level'
+  badge-url:
+    description: 'URL of the trust badge SVG'
+  profile-url:
+    description: 'URL of the agent profile page'
+  updated:
+    description: 'Whether the README was updated'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

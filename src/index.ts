@@ -1,0 +1,333 @@
+import * as core from '@actions/core';
+import * as github from '@actions/github';
+import * as fs from 'fs';
+import * as path from 'path';
+import { lookupTrust } from './registry';
+import { hasTrustBadge, updateBadge } from './readme';
+
+/**
+ * Detect the package name from common manifest files in the repository root.
+ * Checks package.json, setup.py, setup.cfg, and pyproject.toml.
+ */
+function detectPackageName(): string | null {
+  // Try package.json (npm)
+  const packageJsonPath = path.resolve('package.json');
+  if (fs.existsSync(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      if (pkg.name) {
+        core.info(`Detected package name from package.json: ${pkg.name}`);
+        return pkg.name;
+      }
+    } catch {
+      core.debug('Failed to parse package.json');
+    }
+  }
+
+  // Try pyproject.toml (Python - PEP 621)
+  const pyprojectPath = path.resolve('pyproject.toml');
+  if (fs.existsSync(pyprojectPath)) {
+    try {
+      const content = fs.readFileSync(pyprojectPath, 'utf-8');
+      const nameMatch = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+      if (nameMatch) {
+        core.info(`Detected package name from pyproject.toml: ${nameMatch[1]}`);
+        return nameMatch[1];
+      }
+    } catch {
+      core.debug('Failed to parse pyproject.toml');
+    }
+  }
+
+  // Try setup.py (Python - legacy)
+  const setupPyPath = path.resolve('setup.py');
+  if (fs.existsSync(setupPyPath)) {
+    try {
+      const content = fs.readFileSync(setupPyPath, 'utf-8');
+      const nameMatch = content.match(/name\s*=\s*['"]([^'"]+)['"]/);
+      if (nameMatch) {
+        core.info(`Detected package name from setup.py: ${nameMatch[1]}`);
+        return nameMatch[1];
+      }
+    } catch {
+      core.debug('Failed to parse setup.py');
+    }
+  }
+
+  // Try setup.cfg (Python - setuptools declarative)
+  const setupCfgPath = path.resolve('setup.cfg');
+  if (fs.existsSync(setupCfgPath)) {
+    try {
+      const content = fs.readFileSync(setupCfgPath, 'utf-8');
+      const nameMatch = content.match(/^\s*name\s*=\s*(.+)$/m);
+      if (nameMatch) {
+        const name = nameMatch[1].trim();
+        core.info(`Detected package name from setup.cfg: ${name}`);
+        return name;
+      }
+    } catch {
+      core.debug('Failed to parse setup.cfg');
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Generate the badge markdown string for a given agent.
+ */
+function generateBadgeMarkdown(
+  registryUrl: string,
+  agentId: string
+): string {
+  const badgeSvg = `${registryUrl}/v1/trust/${agentId}/badge.svg`;
+  const profilePage = `${registryUrl}/agents/${agentId}`;
+  return `[![OpenA2A Trust Score](${badgeSvg})](${profilePage})`;
+}
+
+async function run(): Promise<void> {
+  try {
+    // Read inputs
+    const readmePath = core.getInput('readme-path') || 'README.md';
+    const packageNameInput = core.getInput('package-name');
+    const packageSource = core.getInput('package-source') || 'npm';
+    const registryUrl = (core.getInput('registry-url') || 'https://registry.opena2a.org').replace(/\/+$/, '');
+    const createPr = core.getInput('create-pr') !== 'false';
+
+    // Step 1: Detect package name
+    const packageName = packageNameInput || detectPackageName();
+    if (!packageName) {
+      core.info(
+        'Could not detect package name. Provide the package-name input or ensure a package.json/pyproject.toml exists.'
+      );
+      core.setOutput('updated', 'false');
+      return;
+    }
+
+    core.info(`Looking up trust profile for: ${packageName} (${packageSource})`);
+
+    // Step 2: Lookup trust
+    const trustData = await lookupTrust(registryUrl, packageName, packageSource);
+    if (!trustData) {
+      core.info(
+        `No trust profile found for ${packageName}. Your package may not have been indexed yet.`
+      );
+      core.setOutput('updated', 'false');
+      return;
+    }
+
+    core.info(
+      `Found trust profile: score=${trustData.trustScore}, level=${trustData.trustLevel}`
+    );
+
+    // Step 3: Generate badge markdown
+    const badgeMarkdown = generateBadgeMarkdown(registryUrl, trustData.agentId);
+
+    // Step 4: Read and update README
+    const resolvedReadmePath = path.resolve(readmePath);
+    if (!fs.existsSync(resolvedReadmePath)) {
+      core.warning(`README not found at ${readmePath}. Skipping badge update.`);
+      core.setOutput('updated', 'false');
+      return;
+    }
+
+    const readmeContent = fs.readFileSync(resolvedReadmePath, 'utf-8');
+    const updatedContent = updateBadge(readmeContent, badgeMarkdown);
+
+    // Check if anything actually changed
+    if (readmeContent === updatedContent) {
+      core.info('README already has the current trust badge. No update needed.');
+      core.setOutput('updated', 'false');
+      setTrustOutputs(trustData, registryUrl);
+      return;
+    }
+
+    fs.writeFileSync(resolvedReadmePath, updatedContent, 'utf-8');
+    core.info('README updated with trust badge.');
+
+    // Step 5: Commit and optionally create PR
+    const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
+    if (token && createPr) {
+      await createPullRequest(token, readmePath, trustData);
+    } else if (token) {
+      await commitDirectly(token, readmePath, updatedContent);
+    } else {
+      core.info('No GITHUB_TOKEN available. README updated locally but not committed.');
+    }
+
+    // Step 6: Set outputs
+    core.setOutput('updated', 'true');
+    setTrustOutputs(trustData, registryUrl);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    core.setFailed(`Action failed: ${message}`);
+  }
+}
+
+function setTrustOutputs(
+  trustData: { agentId: string; trustScore: number; trustLevel: string; profileUrl: string },
+  registryUrl: string
+): void {
+  core.setOutput('trust-score', String(trustData.trustScore));
+  core.setOutput('trust-level', trustData.trustLevel);
+  core.setOutput('badge-url', `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`);
+  core.setOutput('profile-url', trustData.profileUrl);
+}
+
+async function createPullRequest(
+  token: string,
+  readmePath: string,
+  trustData: { agentId: string; trustScore: number; trustLevel: string; profileUrl: string }
+): Promise<void> {
+  const octokit = github.getOctokit(token);
+  const { owner, repo } = github.context.repo;
+  const branchName = 'opena2a/update-trust-badge';
+
+  try {
+    // Get the default branch ref
+    const { data: repoData } = await octokit.rest.repos.get({ owner, repo });
+    const defaultBranch = repoData.default_branch;
+    const { data: refData } = await octokit.rest.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${defaultBranch}`,
+    });
+    const baseSha = refData.object.sha;
+
+    // Create or update the branch
+    try {
+      await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branchName}` });
+      // Branch exists, update it
+      await octokit.rest.git.updateRef({
+        owner,
+        repo,
+        ref: `heads/${branchName}`,
+        sha: baseSha,
+        force: true,
+      });
+    } catch {
+      // Branch does not exist, create it
+      await octokit.rest.git.createRef({
+        owner,
+        repo,
+        ref: `refs/heads/${branchName}`,
+        sha: baseSha,
+      });
+    }
+
+    // Read the updated file content
+    const updatedContent = fs.readFileSync(path.resolve(readmePath), 'utf-8');
+
+    // Get the current file SHA (if it exists on the branch)
+    let fileSha: string | undefined;
+    try {
+      const { data: fileData } = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: readmePath,
+        ref: branchName,
+      });
+      if (!Array.isArray(fileData) && fileData.type === 'file') {
+        fileSha = fileData.sha;
+      }
+    } catch {
+      // File may not exist on the branch yet
+    }
+
+    // Commit the file
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path: readmePath,
+      message: 'Update OpenA2A trust badge',
+      content: Buffer.from(updatedContent).toString('base64'),
+      branch: branchName,
+      sha: fileSha,
+    });
+
+    // Check for existing PR
+    const { data: existingPrs } = await octokit.rest.pulls.list({
+      owner,
+      repo,
+      head: `${owner}:${branchName}`,
+      state: 'open',
+    });
+
+    if (existingPrs.length > 0) {
+      core.info(`Existing PR updated: ${existingPrs[0].html_url}`);
+      return;
+    }
+
+    // Create the PR
+    const { data: pr } = await octokit.rest.pulls.create({
+      owner,
+      repo,
+      title: 'Update OpenA2A trust badge',
+      head: branchName,
+      base: defaultBranch,
+      body: [
+        '## OpenA2A Trust Badge Update',
+        '',
+        `This PR adds or updates the OpenA2A trust badge in your README.`,
+        '',
+        `| Field | Value |`,
+        `|-------|-------|`,
+        `| Trust Score | ${trustData.trustScore} |`,
+        `| Trust Level | ${trustData.trustLevel} |`,
+        `| Profile | [View on Registry](${trustData.profileUrl}) |`,
+        '',
+        'This badge is automatically updated by the [OpenA2A Trust Badge Action](https://github.com/opena2a/trust-badge-action).',
+        '',
+        '---',
+        '*Automated PR -- merge to display your trust score in the README.*',
+      ].join('\n'),
+    });
+
+    core.info(`Pull request created: ${pr.html_url}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    core.warning(`Failed to create PR: ${message}. README was updated locally.`);
+  }
+}
+
+async function commitDirectly(
+  token: string,
+  readmePath: string,
+  content: string
+): Promise<void> {
+  const octokit = github.getOctokit(token);
+  const { owner, repo } = github.context.repo;
+
+  try {
+    // Get current file SHA
+    let fileSha: string | undefined;
+    try {
+      const { data: fileData } = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: readmePath,
+      });
+      if (!Array.isArray(fileData) && fileData.type === 'file') {
+        fileSha = fileData.sha;
+      }
+    } catch {
+      // File may not exist
+    }
+
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path: readmePath,
+      message: 'Update OpenA2A trust badge',
+      content: Buffer.from(content).toString('base64'),
+      sha: fileSha,
+    });
+
+    core.info('Changes committed directly to the current branch.');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    core.warning(`Failed to commit directly: ${message}. README was updated locally.`);
+  }
+}
+
+run();
