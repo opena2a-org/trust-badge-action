@@ -82,10 +82,22 @@ export function updateBadge(content: string, badgeMarkdown: string): string {
   if (markerStartIndex !== -1) {
     const markerEndIndex = content.indexOf(MARKER_END);
     if (markerEndIndex !== -1) {
+      // Both markers present: replace everything between them
       const before = content.substring(0, markerStartIndex);
       const after = content.substring(markerEndIndex + MARKER_END.length);
       return before + wrapped + after;
     }
+    // Orphaned start marker (no end marker): replace from start marker
+    // to the next blank line or end of that line
+    const afterStart = content.substring(markerStartIndex + MARKER_START.length);
+    const blankLineIndex = afterStart.indexOf('\n\n');
+    const endIndex = blankLineIndex !== -1
+      ? markerStartIndex + MARKER_START.length + blankLineIndex
+      : content.indexOf('\n', markerStartIndex + MARKER_START.length);
+    const cutEnd = endIndex !== -1 ? endIndex : content.length;
+    const before = content.substring(0, markerStartIndex);
+    const after = content.substring(cutEnd);
+    return before + wrapped + after;
   }
 
   // Case 2: Badge URL exists without markers -- replace the badge line

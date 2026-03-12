@@ -29922,6 +29922,118 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 1052:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.detectPackageName = detectPackageName;
+const fs = __importStar(__nccwpck_require__(9896));
+const path = __importStar(__nccwpck_require__(6928));
+/**
+ * Detect the package name from common manifest files in the given directory.
+ * Checks package.json, pyproject.toml, setup.py, and setup.cfg.
+ *
+ * @param dir - The directory to search in (defaults to process.cwd())
+ * @returns The detected package name, or null if none found.
+ */
+function detectPackageName(dir) {
+    const baseDir = dir || process.cwd();
+    // Try package.json (npm)
+    const packageJsonPath = path.join(baseDir, 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+        try {
+            const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+            if (pkg.name) {
+                return pkg.name;
+            }
+        }
+        catch {
+            // Malformed package.json -- skip
+        }
+    }
+    // Try pyproject.toml (Python - PEP 621)
+    const pyprojectPath = path.join(baseDir, 'pyproject.toml');
+    if (fs.existsSync(pyprojectPath)) {
+        try {
+            const content = fs.readFileSync(pyprojectPath, 'utf-8');
+            const nameMatch = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+            if (nameMatch) {
+                return nameMatch[1];
+            }
+        }
+        catch {
+            // Malformed pyproject.toml -- skip
+        }
+    }
+    // Try setup.py (Python - legacy)
+    const setupPyPath = path.join(baseDir, 'setup.py');
+    if (fs.existsSync(setupPyPath)) {
+        try {
+            const content = fs.readFileSync(setupPyPath, 'utf-8');
+            const nameMatch = content.match(/name\s*=\s*['"]([^'"]+)['"]/);
+            if (nameMatch) {
+                return nameMatch[1];
+            }
+        }
+        catch {
+            // Malformed setup.py -- skip
+        }
+    }
+    // Try setup.cfg (Python - setuptools declarative)
+    const setupCfgPath = path.join(baseDir, 'setup.cfg');
+    if (fs.existsSync(setupCfgPath)) {
+        try {
+            const content = fs.readFileSync(setupCfgPath, 'utf-8');
+            const nameMatch = content.match(/^\s*name\s*=\s*(.+)$/m);
+            if (nameMatch) {
+                return nameMatch[1].trim();
+            }
+        }
+        catch {
+            // Malformed setup.cfg -- skip
+        }
+    }
+    return null;
+}
+
+
+/***/ }),
+
 /***/ 9407:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -29967,73 +30079,7 @@ const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const registry_1 = __nccwpck_require__(2976);
 const readme_1 = __nccwpck_require__(7553);
-/**
- * Detect the package name from common manifest files in the repository root.
- * Checks package.json, setup.py, setup.cfg, and pyproject.toml.
- */
-function detectPackageName() {
-    // Try package.json (npm)
-    const packageJsonPath = path.resolve('package.json');
-    if (fs.existsSync(packageJsonPath)) {
-        try {
-            const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-            if (pkg.name) {
-                core.info(`Detected package name from package.json: ${pkg.name}`);
-                return pkg.name;
-            }
-        }
-        catch {
-            core.debug('Failed to parse package.json');
-        }
-    }
-    // Try pyproject.toml (Python - PEP 621)
-    const pyprojectPath = path.resolve('pyproject.toml');
-    if (fs.existsSync(pyprojectPath)) {
-        try {
-            const content = fs.readFileSync(pyprojectPath, 'utf-8');
-            const nameMatch = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
-            if (nameMatch) {
-                core.info(`Detected package name from pyproject.toml: ${nameMatch[1]}`);
-                return nameMatch[1];
-            }
-        }
-        catch {
-            core.debug('Failed to parse pyproject.toml');
-        }
-    }
-    // Try setup.py (Python - legacy)
-    const setupPyPath = path.resolve('setup.py');
-    if (fs.existsSync(setupPyPath)) {
-        try {
-            const content = fs.readFileSync(setupPyPath, 'utf-8');
-            const nameMatch = content.match(/name\s*=\s*['"]([^'"]+)['"]/);
-            if (nameMatch) {
-                core.info(`Detected package name from setup.py: ${nameMatch[1]}`);
-                return nameMatch[1];
-            }
-        }
-        catch {
-            core.debug('Failed to parse setup.py');
-        }
-    }
-    // Try setup.cfg (Python - setuptools declarative)
-    const setupCfgPath = path.resolve('setup.cfg');
-    if (fs.existsSync(setupCfgPath)) {
-        try {
-            const content = fs.readFileSync(setupCfgPath, 'utf-8');
-            const nameMatch = content.match(/^\s*name\s*=\s*(.+)$/m);
-            if (nameMatch) {
-                const name = nameMatch[1].trim();
-                core.info(`Detected package name from setup.cfg: ${name}`);
-                return name;
-            }
-        }
-        catch {
-            core.debug('Failed to parse setup.cfg');
-        }
-    }
-    return null;
-}
+const detect_1 = __nccwpck_require__(1052);
 /**
  * Generate the badge markdown string for a given agent.
  */
@@ -30052,7 +30098,10 @@ async function run() {
         const createPr = core.getInput('create-pr') === 'true';
         const autoMerge = core.getInput('auto-merge') !== 'false';
         // Step 1: Detect package name
-        const packageName = packageNameInput || detectPackageName();
+        const packageName = packageNameInput || (0, detect_1.detectPackageName)();
+        if (packageName && !packageNameInput) {
+            core.info(`Detected package name: ${packageName}`);
+        }
         if (!packageName) {
             core.info('Could not detect package name. Provide the package-name input or ensure a package.json/pyproject.toml exists.');
             core.setOutput('updated', 'false');
@@ -30385,10 +30434,22 @@ function updateBadge(content, badgeMarkdown) {
     if (markerStartIndex !== -1) {
         const markerEndIndex = content.indexOf(MARKER_END);
         if (markerEndIndex !== -1) {
+            // Both markers present: replace everything between them
             const before = content.substring(0, markerStartIndex);
             const after = content.substring(markerEndIndex + MARKER_END.length);
             return before + wrapped + after;
         }
+        // Orphaned start marker (no end marker): replace from start marker
+        // to the next blank line or end of that line
+        const afterStart = content.substring(markerStartIndex + MARKER_START.length);
+        const blankLineIndex = afterStart.indexOf('\n\n');
+        const endIndex = blankLineIndex !== -1
+            ? markerStartIndex + MARKER_START.length + blankLineIndex
+            : content.indexOf('\n', markerStartIndex + MARKER_START.length);
+        const cutEnd = endIndex !== -1 ? endIndex : content.length;
+        const before = content.substring(0, markerStartIndex);
+        const after = content.substring(cutEnd);
+        return before + wrapped + after;
     }
     // Case 2: Badge URL exists without markers -- replace the badge line
     const badgeMatch = content.match(BADGE_URL_PATTERN);

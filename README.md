@@ -4,6 +4,10 @@ A GitHub Action that automatically adds and updates the OpenA2A trust score badg
 
 Install once, and the badge stays current. The action looks up your package's trust profile on the [OpenA2A Registry](https://registry.opena2a.org), generates the badge, and commits the update directly to the current branch. No PR, no manual merge, no friction.
 
+## What Is a Trust Score?
+
+A trust score (0-100) reflects the security posture of your AI agent or package based on automated analysis: dependency health, vulnerability scanning, code signing, governance policies, and maintenance activity. Scores are calculated by the OpenA2A Registry and updated as new scan data arrives.
+
 ## Usage
 
 Add this workflow file to your repository at `.github/workflows/trust-badge.yml`:
@@ -29,6 +33,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+After pushing this workflow file, go to your repo's Actions tab, select "Trust Badge", and click "Run workflow" to see it immediately.
 
 The action auto-detects your package name from (in order): `package.json` name field, `pyproject.toml` project name, `setup.py`/`setup.cfg` name. You can override this with the `package-name` input:
 
@@ -62,6 +68,7 @@ on:
 | `registry-url` | OpenA2A Registry URL | No | `https://registry.opena2a.org` |
 | `create-pr` | Create a PR instead of committing directly (use if you have branch protection) | No | `false` |
 | `auto-merge` | Automatically merge the PR after creation (only applies when `create-pr` is `true`) | No | `true` |
+| `github-token` | GitHub token for committing changes and creating PRs. Defaults to `GITHUB_TOKEN` env var. | No | `${{ secrets.GITHUB_TOKEN }}` |
 
 ## Outputs
 
