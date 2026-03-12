@@ -2,7 +2,7 @@
 
 A GitHub Action that automatically adds and updates the OpenA2A trust score badge in your repository's README.
 
-Install once, and the badge stays current. The action looks up your package's trust profile on the [OpenA2A Registry](https://registry.opena2a.org), generates the badge, and opens a PR with the update.
+Install once, and the badge stays current. The action looks up your package's trust profile on the [OpenA2A Registry](https://registry.opena2a.org), generates the badge, and opens a PR with the update. The action opens a PR by default (`create-pr: true`). To commit directly to the current branch, set `create-pr: false`.
 
 ## Usage
 
@@ -12,8 +12,8 @@ Add this workflow file to your repository at `.github/workflows/trust-badge.yml`
 name: Trust Badge
 on:
   schedule:
-    - cron: '0 0 * * 1'  # Weekly on Monday
-  workflow_dispatch:       # Manual trigger
+    - cron: '0 0 * * 1'  # Weekly on Monday at midnight UTC
+  workflow_dispatch:       # Run manually anytime
 
 permissions:
   contents: write
@@ -30,7 +30,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-The action auto-detects your package name from `package.json` or `pyproject.toml`. To specify it manually:
+The action auto-detects your package name from (in order): `package.json` name field, `pyproject.toml` project name, `setup.py`/`setup.cfg` name. You can override this with the `package-name` input:
 
 ```yaml
       - uses: opena2a/trust-badge-action@v1
@@ -41,6 +41,17 @@ The action auto-detects your package name from `package.json` or `pyproject.toml
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+## Manual Trigger
+
+The workflow above includes `workflow_dispatch`, which lets you run it on demand from the Actions tab without waiting for the weekly schedule. To add manual triggering to an existing workflow:
+
+```yaml
+on:
+  workflow_dispatch:  # Run manually anytime
+  schedule:
+    - cron: '0 0 * * 1'  # Also weekly on Monday at midnight UTC
+```
+
 ## Inputs
 
 | Input | Description | Required | Default |
@@ -49,7 +60,7 @@ The action auto-detects your package name from `package.json` or `pyproject.toml
 | `package-name` | Package name to look up (auto-detected if not provided) | No | |
 | `package-source` | Package source: `npm`, `pypi`, `github` | No | `npm` |
 | `registry-url` | OpenA2A Registry URL | No | `https://registry.opena2a.org` |
-| `create-pr` | Create a PR instead of committing directly | No | `true` |
+| `create-pr` | Open a PR with the badge update. Set to `false` to commit directly to the current branch. | No | `true` |
 
 ## Outputs
 
@@ -66,10 +77,12 @@ The action auto-detects your package name from `package.json` or `pyproject.toml
 1. Detects your package name from `package.json`, `pyproject.toml`, `setup.py`, or `setup.cfg` (or uses the provided input).
 2. Looks up the trust profile on the OpenA2A Registry.
 3. Generates the trust badge markdown with a link to the full profile page.
-4. Adds or updates the badge in your README (using HTML comment markers for idempotent updates).
-5. Opens a PR with the change, or commits directly depending on configuration.
+4. Adds or updates the badge in your README. The action wraps the badge in hidden HTML markers so it can update the same badge on future runs without duplicating it.
+5. Opens a PR with the change (default), or commits directly if `create-pr` is set to `false`.
 
-If no trust profile exists for your package, the action exits gracefully with an informational message -- it will not fail your workflow.
+## What If My Package Is Not Found?
+
+If no trust profile exists for your package yet, the action exits successfully without changes. Trust profiles are auto-generated for published packages -- if yours has not been indexed yet, run `opena2a trust <your-package>` to trigger a lookup, or wait for the next indexing cycle.
 
 ## Badge Placement
 
