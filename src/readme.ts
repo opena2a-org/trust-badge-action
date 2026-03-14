@@ -1,7 +1,7 @@
 const MARKER_START = '<!-- opena2a-trust-badge -->';
 const MARKER_END = '<!-- /opena2a-trust-badge -->';
 
-const BADGE_URL_PATTERN = /\[!\[.*?\]\(https:\/\/registry\.opena2a\.org\/v1\/trust\/[^)]+\/badge\.svg\)\]\([^)]+\)/;
+const BADGE_URL_PATTERN = /\[!\[.*?\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/v1\/trust\/[^)]+\/badge\.svg\)\]\([^)]+\)/;
 
 /**
  * Wrap badge markdown with HTML comment markers for future updates.

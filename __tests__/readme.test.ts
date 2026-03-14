@@ -2,7 +2,7 @@ import { findBadgePosition, hasTrustBadge, updateBadge, wrapWithMarkers } from '
 
 describe('wrapWithMarkers', () => {
   it('wraps badge markdown with HTML comment markers', () => {
-    const badge = '[![OpenA2A Trust Score](https://registry.opena2a.org/v1/trust/abc/badge.svg)](https://registry.opena2a.org/agents/abc)';
+    const badge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/abc/badge.svg)](https://registry.opena2a.org/agents/abc)';
     const result = wrapWithMarkers(badge);
     expect(result).toContain('<!-- opena2a-trust-badge -->');
     expect(result).toContain('<!-- /opena2a-trust-badge -->');
@@ -17,7 +17,7 @@ describe('hasTrustBadge', () => {
   });
 
   it('returns true when badge URL pattern exists without markers', () => {
-    const content = '# My Project\n[![Trust](https://registry.opena2a.org/v1/trust/abc123/badge.svg)](https://registry.opena2a.org/agents/abc123)';
+    const content = '# My Project\n[![Trust](https://api.oa2a.org/v1/trust/abc123/badge.svg)](https://registry.opena2a.org/agents/abc123)';
     expect(hasTrustBadge(content)).toBe(true);
   });
 
@@ -65,7 +65,7 @@ describe('findBadgePosition', () => {
 });
 
 describe('updateBadge', () => {
-  const badge = '[![OpenA2A Trust Score](https://registry.opena2a.org/v1/trust/abc/badge.svg)](https://registry.opena2a.org/agents/abc)';
+  const badge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/abc/badge.svg)](https://registry.opena2a.org/agents/abc)';
 
   it('inserts badge after first heading when none exists', () => {
     const content = '# My Project\n\nA description of the project.';
@@ -78,7 +78,7 @@ describe('updateBadge', () => {
   });
 
   it('replaces existing badge between markers', () => {
-    const oldBadge = '[![OpenA2A Trust Score](https://registry.opena2a.org/v1/trust/old/badge.svg)](https://registry.opena2a.org/agents/old)';
+    const oldBadge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old/badge.svg)](https://registry.opena2a.org/agents/old)';
     const content = `# My Project\n<!-- opena2a-trust-badge -->\n${oldBadge}\n<!-- /opena2a-trust-badge -->\n\nDescription.`;
     const result = updateBadge(content, badge);
     expect(result).toContain(badge);
@@ -137,7 +137,7 @@ describe('updateBadge', () => {
   });
 
   it('replaces badge URL pattern without markers', () => {
-    const existingBadge = '[![OpenA2A Trust Score](https://registry.opena2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+    const existingBadge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
     const content = `# My Project\n${existingBadge}\n\nDescription.`;
     const result = updateBadge(content, badge);
     expect(result).toContain(badge);

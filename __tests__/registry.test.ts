@@ -23,10 +23,10 @@ describe('lookupTrust', () => {
       json: async () => mockResponse,
     });
 
-    const result = await lookupTrust('https://registry.opena2a.org', '@example/mcp-server', 'npm');
+    const result = await lookupTrust('https://api.oa2a.org', '@example/mcp-server', 'npm');
     expect(result).toEqual(mockResponse);
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://registry.opena2a.org/v1/trust/lookup?package=%40example%2Fmcp-server&source=npm',
+      'https://api.oa2a.org/v1/trust/lookup?package=%40example%2Fmcp-server&source=npm',
       expect.objectContaining({ method: 'GET' })
     );
   });
@@ -38,7 +38,7 @@ describe('lookupTrust', () => {
       statusText: 'Not Found',
     });
 
-    const result = await lookupTrust('https://registry.opena2a.org', 'unknown-package', 'npm');
+    const result = await lookupTrust('https://api.oa2a.org', 'unknown-package', 'npm');
     expect(result).toBeNull();
   });
 
@@ -69,7 +69,7 @@ describe('lookupTrust', () => {
       statusText: 'Not Found',
     });
 
-    await lookupTrust('https://registry.opena2a.org', '@scope/my-package', 'npm');
+    await lookupTrust('https://api.oa2a.org', '@scope/my-package', 'npm');
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining('%40scope%2Fmy-package'),
       expect.anything()
@@ -83,7 +83,7 @@ describe('lookupTrust', () => {
       statusText: 'Not Found',
     });
 
-    await lookupTrust('https://registry.opena2a.org', 'my-python-package', 'pypi');
+    await lookupTrust('https://api.oa2a.org', 'my-python-package', 'pypi');
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining('source=pypi'),
       expect.anything()

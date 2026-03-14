@@ -65,7 +65,7 @@ on:
 | `readme-path` | Path to the README file | No | `README.md` |
 | `package-name` | Package name to look up (auto-detected if not provided) | No | |
 | `package-source` | Package source: `npm`, `pypi`, `github` | No | `npm` |
-| `registry-url` | OpenA2A Registry URL | No | `https://registry.opena2a.org` |
+| `registry-url` | OpenA2A Registry API URL | No | `https://api.oa2a.org` |
 | `create-pr` | Create a PR instead of committing directly (use if you have branch protection) | No | `false` |
 | `auto-merge` | Automatically merge the PR after creation (only applies when `create-pr` is `true`) | No | `true` |
 | `github-token` | GitHub token for committing changes and creating PRs. Defaults to `GITHUB_TOKEN` env var. | No | `${{ secrets.GITHUB_TOKEN }}` |
