@@ -8,13 +8,15 @@ import { detectPackageName } from './detect';
 
 /**
  * Generate the badge markdown string for a given agent.
+ * Badge SVG is served by the API (registryUrl = api.oa2a.org).
+ * Profile page is served by the frontend (registry.opena2a.org).
  */
 function generateBadgeMarkdown(
   registryUrl: string,
   agentId: string
 ): string {
   const badgeSvg = `${registryUrl}/v1/trust/${agentId}/badge.svg`;
-  const profilePage = `${registryUrl}/agents/${agentId}`;
+  const profilePage = `https://registry.opena2a.org/agents/${agentId}`;
   return `[![OpenA2A Trust Score](${badgeSvg})](${profilePage})`;
 }
 
@@ -24,7 +26,7 @@ async function run(): Promise<void> {
     const readmePath = core.getInput('readme-path') || 'README.md';
     const packageNameInput = core.getInput('package-name');
     const packageSource = core.getInput('package-source') || 'npm';
-    const registryUrl = (core.getInput('registry-url') || 'https://registry.opena2a.org').replace(/\/+$/, '');
+    const registryUrl = (core.getInput('registry-url') || 'https://api.oa2a.org').replace(/\/+$/, '');
     const createPr = core.getInput('create-pr') === 'true';
     const autoMerge = core.getInput('auto-merge') !== 'false';
 
