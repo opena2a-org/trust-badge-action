@@ -1,5 +1,7 @@
 > **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)# OpenA2A Trust Badge Action
 
+[![Status: stable](https://img.shields.io/badge/status-stable-green)](./STATUS.md)
+
 A GitHub Action that adds and auto-updates an [OpenA2A Registry](https://registry.opena2a.org) trust score badge in your README.
 
 ```
