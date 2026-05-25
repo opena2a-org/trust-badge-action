@@ -4,7 +4,7 @@
   "description": "GitHub Action that automatically adds and updates the OpenA2A trust score badge in your README",
   "main": "dist/index.js",
   "scripts": {
-    "build": "ncc build src/index.ts --source-map --license licenses.txt",
+    "build": "rm -rf dist && ncc build src/index.ts --source-map --license licenses.txt",
     "test": "jest",
     "lint": "tsc --noEmit"
   },
