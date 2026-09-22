@@ -32,10 +32,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Verify dist is up to date
-        run: |
-          if [ "$(git diff --name-only dist/)" != "" ]; then
-            echo "dist/ is out of date. Run 'npm run build' and commit the result."
-            git diff dist/
-            exit 1
-          fi
+      - name: Verify the committed dist matches the clean rebuild (tracked and untracked)
+        run: bash scripts/verify-dist.sh
+
+      - name: The dist check's own cells
+        run: bash scripts/test/verify-dist-test.sh
