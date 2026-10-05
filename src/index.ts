@@ -3,22 +3,9 @@ import * as github from '@actions/github';
 import * as fs from 'fs';
 import * as path from 'path';
 import { lookupTrust } from './registry';
-import { hasTrustBadge, updateBadge } from './readme';
+import { updateBadge } from './readme';
 import { detectPackageName } from './detect';
-
-/**
- * Generate the badge markdown string for a given agent.
- * Badge SVG is served by the API (registryUrl = api.oa2a.org).
- * Profile page is served by the frontend (registry.opena2a.org).
- */
-function generateBadgeMarkdown(
-  registryUrl: string,
-  agentId: string
-): string {
-  const badgeSvg = `${registryUrl}/v1/trust/${agentId}/badge.svg`;
-  const profilePage = `https://registry.opena2a.org/agents/${agentId}`;
-  return `[![OpenA2A Trust Score](${badgeSvg})](${profilePage})`;
-}
+import { TrustBadge, badgeMarkdown, resolveBadge } from './badge';
 
 async function run(): Promise<void> {
   try {
@@ -60,7 +47,7 @@ async function run(): Promise<void> {
     );
 
     // Step 3: Generate badge markdown
-    const badgeMarkdown = generateBadgeMarkdown(registryUrl, trustData.agentId);
+    const badge = resolveBadge(registryUrl, packageName, packageSource, trustData);
 
     // Step 4: Read and update README
     const resolvedReadmePath = path.resolve(readmePath);
@@ -71,13 +58,13 @@ async function run(): Promise<void> {
     }
 
     const readmeContent = fs.readFileSync(resolvedReadmePath, 'utf-8');
-    const updatedContent = updateBadge(readmeContent, badgeMarkdown);
+    const updatedContent = updateBadge(readmeContent, badgeMarkdown(badge));
 
     // Check if anything actually changed
     if (readmeContent === updatedContent) {
       core.info('README already has the current trust badge. No update needed.');
       core.setOutput('updated', 'false');
-      setTrustOutputs(trustData, registryUrl);
+      setTrustOutputs(trustData, badge);
       return;
     }
 
@@ -87,7 +74,7 @@ async function run(): Promise<void> {
     // Step 5: Commit and optionally create PR
     const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
     if (token && createPr) {
-      await createPullRequest(token, readmePath, trustData, autoMerge);
+      await createPullRequest(token, readmePath, trustData, badge, autoMerge);
     } else if (token) {
       await commitDirectly(token, readmePath, updatedContent);
     } else {
@@ -96,7 +83,7 @@ async function run(): Promise<void> {
 
     // Step 6: Set outputs
     core.setOutput('updated', 'true');
-    setTrustOutputs(trustData, registryUrl);
+    setTrustOutputs(trustData, badge);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     core.setFailed(`Action failed: ${message}`);
@@ -105,11 +92,11 @@ async function run(): Promise<void> {
 
 function setTrustOutputs(
   trustData: { agentId: string; trustScore: number; trustLevel: string; profileUrl: string },
-  registryUrl: string
+  badge: TrustBadge
 ): void {
   core.setOutput('trust-score', String(trustData.trustScore));
   core.setOutput('trust-level', trustData.trustLevel);
-  core.setOutput('badge-url', `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`);
+  core.setOutput('badge-url', badge.imageUrl);
   core.setOutput('profile-url', trustData.profileUrl);
 }
 
@@ -117,6 +104,7 @@ async function createPullRequest(
   token: string,
   readmePath: string,
   trustData: { agentId: string; trustScore: number; trustLevel: string; profileUrl: string },
+  badge: TrustBadge,
   autoMerge: boolean
 ): Promise<void> {
   const octokit = github.getOctokit(token);
@@ -218,7 +206,7 @@ async function createPullRequest(
         `|-------|-------|`,
         `| Trust Score | ${trustData.trustScore} |`,
         `| Trust Level | ${trustData.trustLevel} |`,
-        `| Profile | [View on Registry](${trustData.profileUrl}) |`,
+        `| Profile | [View on Registry](${badge.linkUrl}) |`,
         '',
         'This badge is automatically updated by the [OpenA2A Trust Badge Action](https://github.com/opena2a/trust-badge-action).',
         '',
