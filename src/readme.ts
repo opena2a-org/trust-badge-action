@@ -3,8 +3,9 @@ const MARKER_END = '<!-- /opena2a-trust-badge -->';
 
 // An unmarked OpenA2A badge in any form this action or its README has written: the package badge
 // (/v1/trust/badge?package=...), the agent-id badge (/v1/trust/<id>/badge.svg) and the earlier
-// README example (/badge/<name>).
-const BADGE_URL_PATTERN = /\[!\[.*?\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+)\)\]\([^)]+\)/;
+// README example (/badge/<name>). The alt text stops at its closing bracket, so a match never
+// starts at an earlier image on the same line.
+const BADGE_URL_PATTERN = /\[!\[[^\]]*\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+)\)\]\([^)]+\)/;
 
 /**
  * Wrap badge markdown with HTML comment markers for future updates.
