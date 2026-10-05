@@ -1,4 +1,4 @@
-require('./sourcemap-register.js');/******/ (() => { // webpackBootstrap
+/******/ (() => { // webpackBootstrap
 /******/ 	var __webpack_modules__ = ({
 
 /***/ 4914:
@@ -29959,14 +29959,24 @@ function isAgentId(value) {
  *   link:  <registry>/v1/trust/lookup?package=<name>&source=<source>
  * An agent id that is not a UUID is never written; the image then names the package instead:
  *   image: <registry>/v1/trust/badge/<name>?source=<source>
+ * The registry serves that route only for a name without "/" (it answers 404 for a scoped npm name
+ * or an owner/repo name, and 400 for the package query), so for such a name without an agent id
+ * there is no badge image to write and this throws.
  */
 function resolveBadge(registryUrl, packageName, source, trustData) {
     if (isSafeBadgeUrl(trustData.badgeImageUrl) && isSafeBadgeUrl(trustData.badgeLinkUrl)) {
         return { imageUrl: trustData.badgeImageUrl, linkUrl: trustData.badgeLinkUrl };
     }
-    const imageUrl = isAgentId(trustData.agentId)
-        ? `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`
-        : `${registryUrl}/v1/trust/badge/${encodeURIComponent(packageName)}?source=${encodeURIComponent(source)}`;
+    let imageUrl;
+    if (isAgentId(trustData.agentId)) {
+        imageUrl = `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`;
+    }
+    else if (!packageName.includes('/')) {
+        imageUrl = `${registryUrl}/v1/trust/badge/${encodeURIComponent(packageName)}?source=${encodeURIComponent(source)}`;
+    }
+    else {
+        throw new Error(`The registry lookup for ${packageName} returned no agent id, and the registry serves no badge image by name for a package name that contains "/". README not changed.`);
+    }
     return {
         imageUrl,
         linkUrl: `${registryUrl}/v1/trust/lookup?${(0, registry_1.trustQuery)(packageName, source)}`,
@@ -30094,7 +30104,7 @@ function detectPackageName(dir) {
 
 /***/ }),
 
-/***/ 9407:
+/***/ 1730:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -30133,6 +30143,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const fs = __importStar(__nccwpck_require__(9896));
@@ -30141,6 +30152,9 @@ const registry_1 = __nccwpck_require__(2976);
 const readme_1 = __nccwpck_require__(7553);
 const detect_1 = __nccwpck_require__(1052);
 const badge_1 = __nccwpck_require__(3120);
+/**
+ * Run the action: look up the package, write its trust badge into the README, and set the outputs.
+ */
 async function run() {
     try {
         // Read inputs
@@ -30179,7 +30193,10 @@ async function run() {
             return;
         }
         const readmeContent = fs.readFileSync(resolvedReadmePath, 'utf-8');
-        const updatedContent = (0, readme_1.updateBadge)(readmeContent, (0, badge_1.badgeMarkdown)(badge));
+        const updatedContent = (0, readme_1.updateBadge)(readmeContent, (0, badge_1.badgeMarkdown)(badge), {
+            packageName,
+            agentId: trustData.agentId,
+        });
         // Check if anything actually changed
         if (readmeContent === updatedContent) {
             core.info('README already has the current trust badge. No update needed.');
@@ -30209,11 +30226,13 @@ async function run() {
         core.setFailed(`Action failed: ${message}`);
     }
 }
+// profile-url is the page the badge links to. The lookup's own profileUrl names a host with no DNS
+// record, so it is not passed through.
 function setTrustOutputs(trustData, badge) {
     core.setOutput('trust-score', String(trustData.trustScore));
     core.setOutput('trust-level', trustData.trustLevel);
     core.setOutput('badge-url', badge.imageUrl);
-    core.setOutput('profile-url', trustData.profileUrl);
+    core.setOutput('profile-url', badge.linkUrl);
 }
 async function createPullRequest(token, readmePath, trustData, badge, autoMerge) {
     const octokit = github.getOctokit(token);
@@ -30311,7 +30330,7 @@ async function createPullRequest(token, readmePath, trustData, badge, autoMerge)
                 `| Trust Level | ${trustData.trustLevel} |`,
                 `| Profile | [View on Registry](${badge.linkUrl}) |`,
                 '',
-                'This badge is automatically updated by the [OpenA2A Trust Badge Action](https://github.com/opena2a/trust-badge-action).',
+                'This badge is automatically updated by the [OpenA2A Trust Badge Action](https://github.com/opena2a-org/trust-badge-action).',
                 '',
                 '---',
                 '*Automated PR -- merge to display your trust score in the README.*',
@@ -30401,7 +30420,6 @@ async function commitDirectly(token, readmePath, content) {
         core.warning(`Failed to commit directly: ${message}. README was updated locally.`);
     }
 }
-run();
 
 
 /***/ }),
@@ -30421,22 +30439,118 @@ const MARKER_END = '<!-- /opena2a-trust-badge -->';
 // An unmarked OpenA2A badge in any form this action or its README has written: the agent-id badge
 // (/v1/trust/<id>/badge.svg), the package badges (/v1/trust/badge/<name>?source=... and
 // /v1/trust/badge?package=...) and the earlier README example (/badge/<name>). The alt text stops
-// at its closing bracket, so a match never starts at an earlier image on the same line.
-const BADGE_URL_PATTERN = /\[!\[[^\]]*\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/badge\/[^)]+|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+)\)\]\([^)]+\)/;
+// at its closing bracket, so a match never starts at an earlier image on the same line. The image
+// URL is captured.
+const BADGE_URL_PATTERN = /\[!\[[^\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/badge\/[^)]+|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+))\)\]\([^)]+\)/g;
+// The opening or closing line of a fenced code block: ``` or ~~~ after any indentation or
+// blockquote markers, then the info string.
+const FENCE = /^[ \t]*(?:>[ \t]*)*(`{3,}|~{3,})(.*)$/;
 /**
- * Wrap badge markdown with HTML comment markers for future updates.
+ * The character ranges of the fenced code blocks in the content. Text inside a fence is an
+ * example, never a badge or a marker this action owns. A fence that is never closed runs to the
+ * end of the content.
  */
-function wrapWithMarkers(badgeMarkdown) {
-    return `${MARKER_START}\n${badgeMarkdown}\n${MARKER_END}`;
+function fencedRanges(content) {
+    const ranges = [];
+    let open = null;
+    let offset = 0;
+    for (const line of content.split('\n')) {
+        const match = FENCE.exec(line.replace(/\r$/, ''));
+        if (open === null) {
+            // A backtick fence's info string cannot itself contain a backtick.
+            if (match && !(match[1][0] === '`' && match[2].includes('`'))) {
+                open = { fence: match[1], start: offset };
+            }
+        }
+        else if (match &&
+            match[1][0] === open.fence[0] &&
+            match[1].length >= open.fence.length &&
+            match[2].trim() === '') {
+            ranges.push([open.start, offset + line.length]);
+            open = null;
+        }
+        offset += line.length + 1;
+    }
+    if (open !== null) {
+        ranges.push([open.start, content.length]);
+    }
+    return ranges;
+}
+function isFenced(index, fences) {
+    return fences.some(([start, end]) => index >= start && index < end);
+}
+// The first index of `search` at or after `from` that is outside every fence, or -1.
+function indexOutsideFences(content, search, fences, from = 0) {
+    let index = content.indexOf(search, from);
+    while (index !== -1 && isFenced(index, fences)) {
+        index = content.indexOf(search, index + 1);
+    }
+    return index;
+}
+function decode(value) {
+    try {
+        return decodeURIComponent(value);
+    }
+    catch {
+        return null;
+    }
 }
 /**
- * Check if the README already contains an OpenA2A trust badge.
+ * Whether a badge image URL names the owner's package (package query, package path, or the earlier
+ * /badge/<name> example) or the owner's agent id (/v1/trust/<id>/badge.svg).
  */
-function hasTrustBadge(content) {
-    if (content.includes(MARKER_START)) {
+function namesOwner(imageUrl, owner) {
+    let url;
+    try {
+        url = new URL(imageUrl);
+    }
+    catch {
+        return false;
+    }
+    if (url.pathname === '/v1/trust/badge') {
+        return url.searchParams.get('package') === owner.packageName;
+    }
+    const named = /^\/(?:v1\/trust\/)?badge\/(.+)$/.exec(url.pathname);
+    if (named) {
+        return decode(named[1]) === owner.packageName;
+    }
+    const agent = /^\/v1\/trust\/([^/]+)\/badge\.svg$/.exec(url.pathname);
+    return (agent !== null &&
+        Boolean(owner.agentId) &&
+        decode(agent[1])?.toLowerCase() === owner.agentId?.toLowerCase());
+}
+/**
+ * The first unmarked OpenA2A badge outside the fences whose image names the owner, or any such
+ * badge when no owner is given.
+ */
+function findUnmarkedBadge(content, fences, owner) {
+    for (const match of content.matchAll(BADGE_URL_PATTERN)) {
+        const index = match.index ?? 0;
+        if (!isFenced(index, fences) && (owner === undefined || namesOwner(match[1], owner))) {
+            return { index, text: match[0] };
+        }
+    }
+    return null;
+}
+/**
+ * Wrap badge markdown with HTML comment markers for future updates: on lines of their own, or on
+ * one line when the badge sits on a line with other text.
+ */
+function wrapWithMarkers(badgeMarkdown, inline = false) {
+    return inline
+        ? `${MARKER_START}${badgeMarkdown}${MARKER_END}`
+        : `${MARKER_START}\n${badgeMarkdown}\n${MARKER_END}`;
+}
+/**
+ * Check if the README already contains an OpenA2A trust badge outside its code fences: the
+ * markers, or an unmarked badge for the owner (for any package when no owner is given).
+ */
+function hasTrustBadge(content, owner) {
+    const fences = fencedRanges(content);
+    if (indexOutsideFences(content, MARKER_START, fences) !== -1) {
         return true;
     }
-    return BADGE_URL_PATTERN.test(content);
+    return findUnmarkedBadge(content, fences, owner) !== null;
 }
 /**
  * Find the best position to insert the badge in the README content.
@@ -30449,25 +30563,30 @@ function hasTrustBadge(content) {
  * 4. Otherwise, insert at the beginning of the file.
  */
 function findBadgePosition(content) {
+    // Lines inside a fenced code block are examples and never place the badge
+    const fences = fencedRanges(content);
     // Check for existing markers
-    const markerIndex = content.indexOf(MARKER_START);
+    const markerIndex = indexOutsideFences(content, MARKER_START, fences);
     if (markerIndex !== -1) {
         return markerIndex;
     }
-    const lines = content.split('\n');
     let lastBadgeLineEnd = -1;
     let firstHeadingEnd = -1;
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        // Track badge lines: [![...](...)](...) pattern
-        if (line.startsWith('[![') && line.includes('](')) {
-            // Calculate character position at end of this line
-            lastBadgeLineEnd = lines.slice(0, i + 1).join('\n').length;
+    let offset = 0;
+    for (const rawLine of content.split('\n')) {
+        const lineEnd = offset + rawLine.length;
+        const line = rawLine.trim();
+        if (!isFenced(offset, fences)) {
+            // Track badge lines: [![...](...)](...) pattern
+            if (line.startsWith('[![') && line.includes('](')) {
+                lastBadgeLineEnd = lineEnd;
+            }
+            // Track the first top-level heading
+            if (firstHeadingEnd === -1 && line.startsWith('#')) {
+                firstHeadingEnd = lineEnd;
+            }
         }
-        // Track the first top-level heading
-        if (firstHeadingEnd === -1 && line.startsWith('#')) {
-            firstHeadingEnd = lines.slice(0, i + 1).join('\n').length;
-        }
+        offset = lineEnd + 1;
     }
     // Insert after the last badge
     if (lastBadgeLineEnd !== -1) {
@@ -30483,18 +30602,25 @@ function findBadgePosition(content) {
 /**
  * Insert or replace the trust badge in README content.
  * The operation is idempotent: running it twice produces the same result.
+ *
+ * Markers and badges inside fenced code blocks are left alone. When an owner is given, an
+ * unmarked badge is replaced only if its image names the owner's package or agent id; a badge for
+ * another package stays as it is.
  */
-function updateBadge(content, badgeMarkdown) {
+function updateBadge(content, badgeMarkdown, owner) {
+    const fences = fencedRanges(content);
     const wrapped = wrapWithMarkers(badgeMarkdown);
     // Case 1: Markers exist -- replace content between them
-    const markerStartIndex = content.indexOf(MARKER_START);
+    const markerStartIndex = indexOutsideFences(content, MARKER_START, fences);
     if (markerStartIndex !== -1) {
-        const markerEndIndex = content.indexOf(MARKER_END);
+        const markerEndIndex = indexOutsideFences(content, MARKER_END, fences, markerStartIndex + MARKER_START.length);
         if (markerEndIndex !== -1) {
-            // Both markers present: replace everything between them
+            // Both markers present: replace everything between them, keeping markers that share a
+            // line on that line
             const before = content.substring(0, markerStartIndex);
             const after = content.substring(markerEndIndex + MARKER_END.length);
-            return before + wrapped + after;
+            const inline = !content.substring(markerStartIndex, markerEndIndex).includes('\n');
+            return before + wrapWithMarkers(badgeMarkdown, inline) + after;
         }
         // Orphaned start marker (no end marker): replace from start marker
         // to the next blank line or end of that line
@@ -30508,12 +30634,16 @@ function updateBadge(content, badgeMarkdown) {
         const after = content.substring(cutEnd);
         return before + wrapped + after;
     }
-    // Case 2: Badge URL exists without markers -- replace the badge line
-    const badgeMatch = content.match(BADGE_URL_PATTERN);
-    if (badgeMatch && badgeMatch.index !== undefined) {
-        const before = content.substring(0, badgeMatch.index);
-        const after = content.substring(badgeMatch.index + badgeMatch[0].length);
-        return before + wrapped + after;
+    // Case 2: Badge URL exists without markers -- replace the badge, on its own line or inline
+    // among the other text of its line
+    const badge = findUnmarkedBadge(content, fences, owner);
+    if (badge) {
+        const before = content.substring(0, badge.index);
+        const after = content.substring(badge.index + badge.text.length);
+        const afterLineEnd = after.indexOf('\n');
+        const restOfLine = before.substring(before.lastIndexOf('\n') + 1) +
+            (afterLineEnd === -1 ? after : after.substring(0, afterLineEnd));
+        return before + wrapWithMarkers(badgeMarkdown, restOfLine.trim() !== '') + after;
     }
     // Case 3: Insert at the best position
     const position = findBadgePosition(content);
@@ -30538,19 +30668,46 @@ function updateBadge(content, badgeMarkdown) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.trustQuery = trustQuery;
 exports.lookupTrust = lookupTrust;
+const DEFAULT_LOOKUP_OPTIONS = {
+    attempts: 3,
+    retryDelayMs: 2000,
+    timeoutMs: 15000,
+};
 /**
  * The query that names a package to the registry's trust routes.
  */
 function trustQuery(packageName, source) {
     return `package=${encodeURIComponent(packageName)}&source=${encodeURIComponent(source)}`;
 }
+// A failure that a later attempt can succeed past: no response (network error or timeout), a rate
+// limit, or a server error.
+class TransientLookupError extends Error {
+}
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
 /**
  * Look up trust information for a package from the OpenA2A Registry.
  * Returns null if the package has no trust profile (404).
- * Throws on network errors or unexpected status codes.
+ * A network error, a timeout, a 429 or a 5xx is retried with backoff; the lookup throws when the
+ * last attempt fails the same way, and at once on any other unexpected status code.
  */
-async function lookupTrust(registryUrl, packageName, source) {
+async function lookupTrust(registryUrl, packageName, source, options = {}) {
+    const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
     const url = `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`;
+    for (let attempt = 1;; attempt++) {
+        try {
+            return await lookupOnce(url, registryUrl, timeoutMs);
+        }
+        catch (error) {
+            if (!(error instanceof TransientLookupError) || attempt >= attempts) {
+                throw error;
+            }
+            await sleep(retryDelayMs * 2 ** (attempt - 1));
+        }
+    }
+}
+async function lookupOnce(url, registryUrl, timeoutMs) {
     let response;
     try {
         response = await fetch(url, {
@@ -30559,18 +30716,21 @@ async function lookupTrust(registryUrl, packageName, source) {
                 Accept: 'application/json',
                 'User-Agent': 'opena2a-trust-badge-action/1.0',
             },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(timeoutMs),
         });
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Failed to connect to registry at ${registryUrl}: ${message}`);
+        throw new TransientLookupError(`Failed to connect to registry at ${registryUrl}: ${message}`);
     }
     if (response.status === 404) {
         return null;
     }
     if (!response.ok) {
-        throw new Error(`Registry returned unexpected status ${response.status}: ${response.statusText}`);
+        const message = `Registry returned unexpected status ${response.status}: ${response.statusText}`;
+        throw response.status === 429 || response.status >= 500
+            ? new TransientLookupError(message)
+            : new Error(message);
     }
     const data = (await response.json());
     return data;
@@ -32490,13 +32650,18 @@ module.exports = parseParams
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
 /******/ 	
 /************************************************************************/
-/******/ 	
-/******/ 	// startup
-/******/ 	// Load entry module and return exports
-/******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(9407);
-/******/ 	module.exports = __webpack_exports__;
-/******/ 	
+var __webpack_exports__ = {};
+// This entry need to be wrapped in an IIFE because it need to be in strict mode.
+(() => {
+"use strict";
+var exports = __webpack_exports__;
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+const main_1 = __nccwpck_require__(1730);
+(0, main_1.run)();
+
+})();
+
+module.exports = __webpack_exports__;
 /******/ })()
 ;
-//# sourceMappingURL=index.js.map

@@ -1,12 +1,16 @@
-> **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)# OpenA2A Trust Badge Action
+> **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+
+# OpenA2A Trust Badge Action
 
 [![Status: stable](https://img.shields.io/badge/status-stable-green)](./STATUS.md)
 
 A GitHub Action that adds and auto-updates an OpenA2A Registry trust score badge in your README.
 
 ```
-[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=hackmyagent&source=npm)
+[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/<agent-id>/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>)
 ```
+
+`<agent-id>` is the id the registry lookup returns for your package.
 
 ## Usage
 
@@ -27,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: opena2a/trust-badge-action@v1
+      - uses: opena2a-org/trust-badge-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -35,7 +39,7 @@ jobs:
 The action auto-detects your package name from `package.json`, `pyproject.toml`, or `setup.py`. Override with:
 
 ```yaml
-      - uses: opena2a/trust-badge-action@v1
+      - uses: opena2a-org/trust-badge-action@v1
         with:
           package-name: '@my-org/my-agent'
           package-source: npm
@@ -51,21 +55,21 @@ The action auto-detects your package name from `package.json`, `pyproject.toml`,
 | `registry-url` | OpenA2A Registry API URL | `https://api.oa2a.org` |
 | `create-pr` | Create a PR instead of committing directly | `false` |
 | `auto-merge` | Auto-merge the PR (only when `create-pr: true`) | `true` |
-| `github-token` | GitHub token for commits/PRs | `${{ secrets.GITHUB_TOKEN }}` |
+| `github-token` | GitHub token for commits/PRs, used when the `GITHUB_TOKEN` environment variable is not set; without either, the README is updated in the workspace only | |
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `trust-score` | Current trust score (0-100) |
+| `trust-score` | Trust score as the registry lookup returns it: a number from 0 to 1, not rounded |
 | `trust-level` | Level: discovered, scanned, claimed, verified, certified |
 | `badge-url` | URL of the trust badge SVG |
-| `profile-url` | URL of the agent profile page |
+| `profile-url` | URL the badge links to: the registry trust lookup for the package |
 | `updated` | Whether the README was updated (`true`/`false`) |
 
 ## Badge Placement
 
-The action auto-places the badge after existing badges or the first heading. To control placement manually, add markers:
+The action auto-places the badge after existing badges or the first heading. An existing OpenA2A badge for the same package is replaced where it is, on the same line; badges for other packages and examples inside code blocks are left as they are. To control placement manually, add markers:
 
 ```markdown
 <!-- opena2a-trust-badge -->

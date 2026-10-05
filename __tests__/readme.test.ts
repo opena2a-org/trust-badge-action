@@ -197,4 +197,136 @@ describe('updateBadge', () => {
     expect(result).toContain(badge);
     expect(result).not.toContain('old-name');
   });
+
+  describe('code fences', () => {
+    const example = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/example?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=example&source=npm)';
+
+    it.each([
+      ['a backtick fence', '```markdown', '```'],
+      ['a tilde fence', '~~~', '~~~'],
+      ['a longer fence', '````', '````'],
+      ['an indented fence', '   ```', '   ```'],
+    ])('leaves an unmarked badge inside %s alone', (_label, open, close) => {
+      const fence = `${open}\n${example}\n${close}`;
+      const content = `# My Project\n\n${fence}\n`;
+      const result = updateBadge(content, badge);
+      expect(result).toContain(fence);
+      expect(result).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n${fence}\n`);
+    });
+
+    it('leaves an unmarked badge inside a fence in a blockquote alone', () => {
+      const fence = `> \`\`\`markdown\n> ${example}\n> \`\`\``;
+      const content = `# My Project\n\n${fence}\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n${fence}\n`);
+    });
+
+    it('leaves a badge inside a fence that is never closed alone', () => {
+      const content = `# My Project\n\n\`\`\`\n${example}\n`;
+      const result = updateBadge(content, badge);
+      expect(result).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n\`\`\`\n${example}\n`);
+    });
+
+    it('replaces the badge after a fence when the fence holds an example of it', () => {
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+      const fence = `\`\`\`\n${example}\n\`\`\``;
+      const content = `# My Project\n\n${fence}\n\n${own}\n`;
+      const result = updateBadge(content, badge);
+      expect(result).toBe(`# My Project\n\n${fence}\n\n${wrapWithMarkers(badge)}\n`);
+    });
+
+    it('leaves markers inside a fence alone', () => {
+      const fence = '```markdown\n<!-- opena2a-trust-badge -->\n<!-- /opena2a-trust-badge -->\n```';
+      const content = `# My Project\n\n${fence}\n`;
+      const result = updateBadge(content, badge);
+      expect(result).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n${fence}\n`);
+      expect(hasTrustBadge(content)).toBe(false);
+    });
+
+    it('does not count a badge line or a heading inside a fence when placing the badge', () => {
+      const content = `Intro text.\n\n\`\`\`bash\n# install\n${example}\n\`\`\`\n`;
+      expect(findBadgePosition(content)).toBe(0);
+    });
+
+    it('treats a closing fence with a CRLF line ending as closed', () => {
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+      const content = `# My Project\r\n\r\n\`\`\`\r\n${example}\r\n\`\`\`\r\n\r\n${own}\r\n`;
+      const result = updateBadge(content, badge);
+      expect(result).toContain(example);
+      expect(result).not.toContain('old-id');
+    });
+  });
+
+  describe('with the package the badge is written for', () => {
+    const owner = { packageName: '@scope/my-agent', agentId: 'E3B58711-0F97-441C-8A83-4B1B5342A39F' };
+
+    it.each([
+      ['the agent-id form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg)](https://registry.opena2a.org/agents/e3b58711-0f97-441c-8a83-4b1b5342a39f)'],
+      ['the package form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge?package=%40scope%2Fmy-agent&source=npm)](https://api.oa2a.org/v1/trust/lookup?package=%40scope%2Fmy-agent&source=npm)'],
+      ['the package-name form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/%40scope%2Fmy-agent?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=%40scope%2Fmy-agent&source=npm)'],
+      ['the earlier README example form', '[![OpenA2A Trust](https://api.oa2a.org/badge/@scope/my-agent)](https://registry.opena2a.org/package/@scope/my-agent)'],
+    ])('replaces its own badge in %s', (_label, existingBadge) => {
+      const content = `# My Project\n${existingBadge}\n\nDescription.`;
+      const result = updateBadge(content, badge, owner);
+      expect(result).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\nDescription.`);
+      expect(hasTrustBadge(content, owner)).toBe(true);
+    });
+
+    it.each([
+      ['an agent-id badge for another agent', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/2d619697-fd82-44ba-bf31-68d0d06ad697/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=other&source=npm)'],
+      ['a package badge for another package', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge?package=other&source=npm)](https://api.oa2a.org/v1/trust/lookup?package=other&source=npm)'],
+      ['a package-name badge for another package', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/other?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=other&source=npm)'],
+      ['an earlier README example badge for another package', '[![OpenA2A Trust](https://api.oa2a.org/badge/other)](https://registry.opena2a.org/package/other)'],
+      ['a badge for a package whose name only starts the same', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/%40scope%2Fmy-agent-extra?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=%40scope%2Fmy-agent-extra&source=npm)'],
+    ])('keeps %s and adds its own badge', (_label, otherBadge) => {
+      const content = `# My Project\n${otherBadge}\n\nDescription.`;
+      const result = updateBadge(content, badge, owner);
+      expect(result).toBe(`# My Project\n${otherBadge}\n${wrapWithMarkers(badge)}\n\nDescription.`);
+      expect(hasTrustBadge(content, owner)).toBe(false);
+    });
+
+    it('replaces its own badge and keeps the one for another package before it', () => {
+      const other = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/other?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=other&source=npm)';
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/%40scope%2Fmy-agent?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=%40scope%2Fmy-agent&source=npm)';
+      const content = `# My Project\n${other}\n${own}\n\nDescription.`;
+      const result = updateBadge(content, badge, owner);
+      expect(result).toBe(`# My Project\n${other}\n${wrapWithMarkers(badge)}\n\nDescription.`);
+    });
+  });
+
+  describe('a badge on a line with other badges', () => {
+    const npmBadge = '[![npm](https://img.shields.io/npm/v/p)](https://www.npmjs.com/package/p)';
+    const licenseBadge = '[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)';
+    const inlineWrapped = `<!-- opena2a-trust-badge -->${badge}<!-- /opena2a-trust-badge -->`;
+
+    it('keeps the markers and the badge on that line', () => {
+      const existingBadge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=p&source=npm)';
+      const content = `${npmBadge} ${licenseBadge} ${existingBadge}\n\n# My Project\n`;
+      const result = updateBadge(content, badge);
+      expect(result).toBe(`${npmBadge} ${licenseBadge} ${inlineWrapped}\n\n# My Project\n`);
+    });
+
+    it('keeps the markers on the line when the badge comes first', () => {
+      const existingBadge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=p&source=npm)';
+      const content = `${existingBadge} ${npmBadge}\n`;
+      expect(updateBadge(content, badge)).toBe(`${inlineWrapped} ${npmBadge}\n`);
+    });
+
+    it('is idempotent and keeps updating the badge on that line', () => {
+      const existingBadge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=p&source=npm)';
+      const content = `# My Project\n\n${npmBadge} ${existingBadge} ${licenseBadge}\n\nDescription.`;
+      const firstRun = updateBadge(content, badge);
+      expect(updateBadge(firstRun, badge)).toBe(firstRun);
+
+      const newer = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/new-id/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=p&source=npm)';
+      const secondRun = updateBadge(firstRun, newer);
+      expect(secondRun).toBe(
+        `# My Project\n\n${npmBadge} <!-- opena2a-trust-badge -->${newer}<!-- /opena2a-trust-badge --> ${licenseBadge}\n\nDescription.`
+      );
+    });
+
+    it('keeps markers on their own lines when they are on their own lines', () => {
+      const content = `# My Project\n<!-- opena2a-trust-badge -->\nold\n<!-- /opena2a-trust-badge -->\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n${wrapWithMarkers(badge)}\n`);
+    });
+  });
 });

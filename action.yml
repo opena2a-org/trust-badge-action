@@ -28,16 +28,19 @@ inputs:
     description: 'Automatically merge the PR after creation (only applies when create-pr is true)'
     required: false
     default: 'true'
+  github-token:
+    description: 'GitHub token for commits and PRs, used when the GITHUB_TOKEN environment variable is not set. Without either, the README is updated in the workspace only.'
+    required: false
 
 outputs:
   trust-score:
-    description: 'Current trust score (0-100)'
+    description: 'Trust score as the registry lookup returns it: a number from 0 to 1, not rounded'
   trust-level:
     description: 'Current trust level'
   badge-url:
     description: 'URL of the trust badge SVG'
   profile-url:
-    description: 'URL of the agent profile page'
+    description: 'URL the badge links to: the registry trust lookup for the package'
   updated:
     description: 'Whether the README was updated'
 

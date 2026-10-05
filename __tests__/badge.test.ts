@@ -58,9 +58,18 @@ describe('resolveBadge', () => {
     });
   });
 
-  it('encodes the package name when the image names the package', () => {
-    const badge = resolveBadge(REGISTRY, '@scope/my-agent', 'npm', { ...lookup, agentId: 'abc123' });
-    expect(badge.imageUrl).toBe('https://api.oa2a.org/v1/trust/badge/%40scope%2Fmy-agent?source=npm');
+  it.each([
+    ['a scoped npm name', '@scope/my-agent', 'npm'],
+    ['an owner/repo name', 'my-org/my-agent', 'github'],
+  ])('writes no image by name for %s without an agent id, a route the registry answers with 404', (_label, name, source) => {
+    expect(() => resolveBadge(REGISTRY, name, source, { ...lookup, agentId: 'abc123' })).toThrow(
+      `The registry lookup for ${name} returned no agent id, and the registry serves no badge image by name for a package name that contains "/".`
+    );
+  });
+
+  it('still writes the agent-id image for a scoped name when the lookup returned an agent id', () => {
+    const badge = resolveBadge(REGISTRY, '@scope/my-agent', 'npm', lookup);
+    expect(badge.imageUrl).toBe('https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg');
   });
 
   it('uses the badge image and link the lookup returns when it returns both', () => {
