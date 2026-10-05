@@ -36,6 +36,9 @@ function isAgentId(value: unknown): value is string {
  *   link:  <registry>/v1/trust/lookup?package=<name>&source=<source>
  * An agent id that is not a UUID is never written; the image then names the package instead:
  *   image: <registry>/v1/trust/badge/<name>?source=<source>
+ * The registry serves that route only for a name without "/" (it answers 404 for a scoped npm name
+ * or an owner/repo name, and 400 for the package query), so for such a name without an agent id
+ * there is no badge image to write and this throws.
  */
 export function resolveBadge(
   registryUrl: string,
@@ -46,9 +49,16 @@ export function resolveBadge(
   if (isSafeBadgeUrl(trustData.badgeImageUrl) && isSafeBadgeUrl(trustData.badgeLinkUrl)) {
     return { imageUrl: trustData.badgeImageUrl, linkUrl: trustData.badgeLinkUrl };
   }
-  const imageUrl = isAgentId(trustData.agentId)
-    ? `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`
-    : `${registryUrl}/v1/trust/badge/${encodeURIComponent(packageName)}?source=${encodeURIComponent(source)}`;
+  let imageUrl: string;
+  if (isAgentId(trustData.agentId)) {
+    imageUrl = `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`;
+  } else if (!packageName.includes('/')) {
+    imageUrl = `${registryUrl}/v1/trust/badge/${encodeURIComponent(packageName)}?source=${encodeURIComponent(source)}`;
+  } else {
+    throw new Error(
+      `The registry lookup for ${packageName} returned no agent id, and the registry serves no badge image by name for a package name that contains "/". README not changed.`
+    );
+  }
   return {
     imageUrl,
     linkUrl: `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`,

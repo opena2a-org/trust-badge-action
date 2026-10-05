@@ -50,7 +50,7 @@ describe('lookupTrust', () => {
     });
 
     await expect(
-      lookupTrust('https://registry.opena2a.org', 'some-package', 'npm')
+      lookupTrust('https://registry.opena2a.org', 'some-package', 'npm', { retryDelayMs: 0 })
     ).rejects.toThrow('Registry returned unexpected status 500');
   });
 
@@ -58,7 +58,7 @@ describe('lookupTrust', () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
 
     await expect(
-      lookupTrust('https://registry.opena2a.org', 'some-package', 'npm')
+      lookupTrust('https://registry.opena2a.org', 'some-package', 'npm', { retryDelayMs: 0 })
     ).rejects.toThrow('Failed to connect to registry');
   });
 
@@ -88,5 +88,95 @@ describe('lookupTrust', () => {
       expect.stringContaining('source=pypi'),
       expect.anything()
     );
+  });
+
+  describe('retries', () => {
+    const found: TrustLookupResponse = {
+      agentId: 'e3b58711-0f97-441c-8a83-4b1b5342a39f',
+      name: 'hackmyagent',
+      trustScore: 0.21666666666666667,
+      trustLevel: 'discovered',
+      profileUrl: 'https://registry.opena2a.org/agents/e3b58711-0f97-441c-8a83-4b1b5342a39f',
+    };
+    const ok = { ok: true, status: 200, json: async () => found };
+    const timeout = Object.assign(new Error('The operation was aborted due to timeout'), {
+      name: 'TimeoutError',
+    });
+
+    it('retries a lookup that timed out and returns the next answer', async () => {
+      global.fetch = jest.fn().mockRejectedValueOnce(timeout).mockResolvedValueOnce(ok);
+
+      const result = await lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 0 });
+      expect(result).toEqual(found);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([429, 500, 502, 503])('retries a %s and returns the next answer', async (status) => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status, statusText: 'Unavailable' })
+        .mockResolvedValueOnce(ok);
+
+      const result = await lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 0 });
+      expect(result).toEqual(found);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('fails after the last attempt when every attempt times out', async () => {
+      global.fetch = jest.fn().mockRejectedValue(timeout);
+
+      await expect(
+        lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { attempts: 3, retryDelayMs: 0 })
+      ).rejects.toThrow('Failed to connect to registry at https://api.oa2a.org: The operation was aborted due to timeout');
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('makes three attempts by default', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable' });
+
+      await expect(
+        lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 0 })
+      ).rejects.toThrow('Registry returned unexpected status 503');
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('waits longer before each retry', async () => {
+      jest.useFakeTimers();
+      try {
+        global.fetch = jest.fn().mockRejectedValue(timeout);
+        const lookup = lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 1000 });
+        const settled = lookup.catch((error: Error) => error);
+
+        await jest.advanceTimersByTimeAsync(999);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        await jest.advanceTimersByTimeAsync(1);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        await jest.advanceTimersByTimeAsync(1999);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        await jest.advanceTimersByTimeAsync(1);
+        expect(global.fetch).toHaveBeenCalledTimes(3);
+        expect(await settled).toBeInstanceOf(Error);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('does not retry a status that another attempt would not change', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 400, statusText: 'Bad Request' });
+
+      await expect(
+        lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 0 })
+      ).rejects.toThrow('Registry returned unexpected status 400');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a package with no trust profile', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+
+      await expect(
+        lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 0 })
+      ).resolves.toBeNull();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
   });
 });
