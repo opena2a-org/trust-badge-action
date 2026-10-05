@@ -4,6 +4,15 @@ export interface TrustLookupResponse {
   trustScore: number;
   trustLevel: string;
   profileUrl: string;
+  badgeImageUrl?: string;
+  badgeLinkUrl?: string;
+}
+
+/**
+ * The query that names a package to the registry's trust routes.
+ */
+export function trustQuery(packageName: string, source: string): string {
+  return `package=${encodeURIComponent(packageName)}&source=${encodeURIComponent(source)}`;
 }
 
 /**
@@ -16,7 +25,7 @@ export async function lookupTrust(
   packageName: string,
   source: string
 ): Promise<TrustLookupResponse | null> {
-  const url = `${registryUrl}/v1/trust/lookup?package=${encodeURIComponent(packageName)}&source=${encodeURIComponent(source)}`;
+  const url = `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`;
 
   let response: Response;
   try {

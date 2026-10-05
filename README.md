@@ -2,10 +2,10 @@
 
 [![Status: stable](https://img.shields.io/badge/status-stable-green)](./STATUS.md)
 
-A GitHub Action that adds and auto-updates an [OpenA2A Registry](https://registry.opena2a.org) trust score badge in your README.
+A GitHub Action that adds and auto-updates an OpenA2A Registry trust score badge in your README.
 
 ```
-[![OpenA2A Trust](https://api.oa2a.org/badge/my-package)](https://registry.opena2a.org/package/my-package)
+[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge?package=hackmyagent&source=npm)](https://api.oa2a.org/v1/trust/lookup?package=hackmyagent&source=npm)
 ```
 
 ## Usage

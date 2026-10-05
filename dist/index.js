@@ -29922,6 +29922,58 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 3120:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveBadge = resolveBadge;
+exports.badgeMarkdown = badgeMarkdown;
+const registry_1 = __nccwpck_require__(2976);
+// An absolute https URL with nothing that could end the markdown image or link it is written into.
+const SAFE_BADGE_URL = /^https:\/\/[^\s()[\]<>"'`\\]+$/;
+function isSafeBadgeUrl(value) {
+    if (typeof value !== 'string' || !SAFE_BADGE_URL.test(value)) {
+        return false;
+    }
+    try {
+        new URL(value);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Resolve the badge image and the page it links to for a package.
+ *
+ * The registry's lookup response names both (badgeImageUrl, badgeLinkUrl), so the route form is
+ * decided in one place. When the lookup does not return both, the badge is built from the
+ * package and source inputs:
+ *   image: <registry>/v1/trust/badge?package=<name>&source=<source>
+ *   link:  <registry>/v1/trust/lookup?package=<name>&source=<source>
+ */
+function resolveBadge(registryUrl, packageName, source, trustData) {
+    if (isSafeBadgeUrl(trustData.badgeImageUrl) && isSafeBadgeUrl(trustData.badgeLinkUrl)) {
+        return { imageUrl: trustData.badgeImageUrl, linkUrl: trustData.badgeLinkUrl };
+    }
+    const query = (0, registry_1.trustQuery)(packageName, source);
+    return {
+        imageUrl: `${registryUrl}/v1/trust/badge?${query}`,
+        linkUrl: `${registryUrl}/v1/trust/lookup?${query}`,
+    };
+}
+/**
+ * Generate the badge markdown: the badge image wrapped in its link.
+ */
+function badgeMarkdown(badge) {
+    return `[![OpenA2A Trust Score](${badge.imageUrl})](${badge.linkUrl})`;
+}
+
+
+/***/ }),
+
 /***/ 1052:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -30080,16 +30132,7 @@ const path = __importStar(__nccwpck_require__(6928));
 const registry_1 = __nccwpck_require__(2976);
 const readme_1 = __nccwpck_require__(7553);
 const detect_1 = __nccwpck_require__(1052);
-/**
- * Generate the badge markdown string for a given agent.
- * Badge SVG is served by the API (registryUrl = api.oa2a.org).
- * Profile page is served by the frontend (registry.opena2a.org).
- */
-function generateBadgeMarkdown(registryUrl, agentId) {
-    const badgeSvg = `${registryUrl}/v1/trust/${agentId}/badge.svg`;
-    const profilePage = `https://registry.opena2a.org/agents/${agentId}`;
-    return `[![OpenA2A Trust Score](${badgeSvg})](${profilePage})`;
-}
+const badge_1 = __nccwpck_require__(3120);
 async function run() {
     try {
         // Read inputs
@@ -30119,7 +30162,7 @@ async function run() {
         }
         core.info(`Found trust profile: score=${trustData.trustScore}, level=${trustData.trustLevel}`);
         // Step 3: Generate badge markdown
-        const badgeMarkdown = generateBadgeMarkdown(registryUrl, trustData.agentId);
+        const badge = (0, badge_1.resolveBadge)(registryUrl, packageName, packageSource, trustData);
         // Step 4: Read and update README
         const resolvedReadmePath = path.resolve(readmePath);
         if (!fs.existsSync(resolvedReadmePath)) {
@@ -30128,12 +30171,12 @@ async function run() {
             return;
         }
         const readmeContent = fs.readFileSync(resolvedReadmePath, 'utf-8');
-        const updatedContent = (0, readme_1.updateBadge)(readmeContent, badgeMarkdown);
+        const updatedContent = (0, readme_1.updateBadge)(readmeContent, (0, badge_1.badgeMarkdown)(badge));
         // Check if anything actually changed
         if (readmeContent === updatedContent) {
             core.info('README already has the current trust badge. No update needed.');
             core.setOutput('updated', 'false');
-            setTrustOutputs(trustData, registryUrl);
+            setTrustOutputs(trustData, badge);
             return;
         }
         fs.writeFileSync(resolvedReadmePath, updatedContent, 'utf-8');
@@ -30141,7 +30184,7 @@ async function run() {
         // Step 5: Commit and optionally create PR
         const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
         if (token && createPr) {
-            await createPullRequest(token, readmePath, trustData, autoMerge);
+            await createPullRequest(token, readmePath, trustData, badge, autoMerge);
         }
         else if (token) {
             await commitDirectly(token, readmePath, updatedContent);
@@ -30151,20 +30194,20 @@ async function run() {
         }
         // Step 6: Set outputs
         core.setOutput('updated', 'true');
-        setTrustOutputs(trustData, registryUrl);
+        setTrustOutputs(trustData, badge);
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         core.setFailed(`Action failed: ${message}`);
     }
 }
-function setTrustOutputs(trustData, registryUrl) {
+function setTrustOutputs(trustData, badge) {
     core.setOutput('trust-score', String(trustData.trustScore));
     core.setOutput('trust-level', trustData.trustLevel);
-    core.setOutput('badge-url', `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`);
+    core.setOutput('badge-url', badge.imageUrl);
     core.setOutput('profile-url', trustData.profileUrl);
 }
-async function createPullRequest(token, readmePath, trustData, autoMerge) {
+async function createPullRequest(token, readmePath, trustData, badge, autoMerge) {
     const octokit = github.getOctokit(token);
     const { owner, repo } = github.context.repo;
     const branchName = 'opena2a/update-trust-badge';
@@ -30258,7 +30301,7 @@ async function createPullRequest(token, readmePath, trustData, autoMerge) {
                 `|-------|-------|`,
                 `| Trust Score | ${trustData.trustScore} |`,
                 `| Trust Level | ${trustData.trustLevel} |`,
-                `| Profile | [View on Registry](${trustData.profileUrl}) |`,
+                `| Profile | [View on Registry](${badge.linkUrl}) |`,
                 '',
                 'This badge is automatically updated by the [OpenA2A Trust Badge Action](https://github.com/opena2a/trust-badge-action).',
                 '',
@@ -30367,7 +30410,10 @@ exports.findBadgePosition = findBadgePosition;
 exports.updateBadge = updateBadge;
 const MARKER_START = '<!-- opena2a-trust-badge -->';
 const MARKER_END = '<!-- /opena2a-trust-badge -->';
-const BADGE_URL_PATTERN = /\[!\[.*?\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/v1\/trust\/[^)]+\/badge\.svg\)\]\([^)]+\)/;
+// An unmarked OpenA2A badge in any form this action or its README has written: the package badge
+// (/v1/trust/badge?package=...), the agent-id badge (/v1/trust/<id>/badge.svg) and the earlier
+// README example (/badge/<name>).
+const BADGE_URL_PATTERN = /\[!\[.*?\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+)\)\]\([^)]+\)/;
 /**
  * Wrap badge markdown with HTML comment markers for future updates.
  */
@@ -30481,14 +30527,21 @@ function updateBadge(content, badgeMarkdown) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.trustQuery = trustQuery;
 exports.lookupTrust = lookupTrust;
+/**
+ * The query that names a package to the registry's trust routes.
+ */
+function trustQuery(packageName, source) {
+    return `package=${encodeURIComponent(packageName)}&source=${encodeURIComponent(source)}`;
+}
 /**
  * Look up trust information for a package from the OpenA2A Registry.
  * Returns null if the package has no trust profile (404).
  * Throws on network errors or unexpected status codes.
  */
 async function lookupTrust(registryUrl, packageName, source) {
-    const url = `${registryUrl}/v1/trust/lookup?package=${encodeURIComponent(packageName)}&source=${encodeURIComponent(source)}`;
+    const url = `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`;
     let response;
     try {
         response = await fetch(url, {
