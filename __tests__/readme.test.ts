@@ -162,4 +162,29 @@ describe('updateBadge', () => {
     expect(result).not.toContain('old-id');
     expect(result).toContain('<!-- opena2a-trust-badge -->');
   });
+
+  it.each([
+    ['the package form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge?package=old-name&source=npm)](https://api.oa2a.org/v1/trust/lookup?package=old-name&source=npm)'],
+    ['the earlier README example form', '[![OpenA2A Trust](https://api.oa2a.org/badge/old-name)](https://registry.opena2a.org/package/old-name)'],
+    ['the agent-id form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-name/badge.svg)](https://registry.opena2a.org/agents/old-name)'],
+  ])('keeps other badges on the same line when it replaces an unmarked badge in %s', (_label, existingBadge) => {
+    const npmBadge = '[![npm](https://img.shields.io/npm/v/p)](https://www.npmjs.com/package/p)';
+    const licenseBadge = '[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)';
+    const content = `# My Project\n${npmBadge} ${licenseBadge} ${existingBadge}\n\nDescription.`;
+    const result = updateBadge(content, badge);
+    expect(result).toContain(npmBadge);
+    expect(result).toContain(licenseBadge);
+    expect(result).toContain(badge);
+    expect(result).not.toContain('old-name');
+    expect(result.match(/\[!\[OpenA2A Trust/g)).toHaveLength(1);
+  });
+
+  it('keeps prose that precedes an unmarked badge on the same line', () => {
+    const existingBadge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge?package=old-name&source=npm)](https://api.oa2a.org/v1/trust/lookup?package=old-name&source=npm)';
+    const content = `# My Project\nSee [![build](https://img.shields.io/badge/build-passing-green)](./ci) and ${existingBadge}\n`;
+    const result = updateBadge(content, badge);
+    expect(result).toContain('See [![build](https://img.shields.io/badge/build-passing-green)](./ci) and ');
+    expect(result).toContain(badge);
+    expect(result).not.toContain('old-name');
+  });
 });
