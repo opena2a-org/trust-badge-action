@@ -1,4 +1,5 @@
 import { badgeMarkdown, resolveBadge } from '../src/badge';
+import { updateBadge } from '../src/readme';
 import { TrustLookupResponse } from '../src/registry';
 
 const REGISTRY = 'https://api.oa2a.org';
@@ -97,6 +98,11 @@ describe('resolveBadge', () => {
     ['a non-https URL', 'http://api.oa2a.org/v1/trust/badge?package=my-agent&source=npm'],
     ['a value that is not a URL', 'not a url'],
     ['a value that would close the markdown link', 'https://api.oa2a.org/x)](https://example.com/y'],
+    ['a URL with a NUL character', 'https://api.oa2a.org/x\u0000y'],
+    ['a URL with an escape character', 'https://api.oa2a.org/x\u001bcy'],
+    ['a URL with a unit separator', 'https://api.oa2a.org/x\u001fy'],
+    ['a URL with a DEL character', 'https://api.oa2a.org/x\u007fy'],
+    ['a URL with a "|", which would split the pull request table cell', 'https://api.oa2a.org/x|y'],
   ])('ignores %s from the lookup', (_label, value) => {
     const badge = resolveBadge(REGISTRY, 'my-agent', 'npm', {
       ...lookup,
@@ -107,6 +113,70 @@ describe('resolveBadge', () => {
       imageUrl: 'https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg',
       linkUrl: 'https://api.oa2a.org/v1/trust/lookup?package=my-agent&source=npm',
     });
+  });
+});
+
+describe('resolveBadge with badge URLs from the lookup', () => {
+  const builtPair = {
+    imageUrl: 'https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg',
+    linkUrl: 'https://api.oa2a.org/v1/trust/lookup?package=my-agent&source=npm',
+  };
+
+  it.each([
+    ['both on another host', 'https://img.example.net/b.svg', 'https://www.example.net/p'],
+    ['the image on another host', 'https://img.example.net/b.svg', 'https://api.oa2a.org/v1/trust/lookup?package=my-agent&source=npm'],
+    ['the link on another host', 'https://api.oa2a.org/v1/trust/badge/my-agent?source=npm', 'https://www.example.net/p'],
+    ['both on a subdomain of the registry host', 'https://x.api.oa2a.org/b.svg', 'https://x.api.oa2a.org/p'],
+    ['both on another port of the registry host', 'https://api.oa2a.org:8443/b.svg', 'https://api.oa2a.org:8443/p'],
+    ['both on a host that only starts with the registry host', 'https://api.oa2a.org.example.net/b.svg', 'https://api.oa2a.org.example.net/p'],
+    ['both on another host behind registry-host userinfo', 'https://api.oa2a.org@example.net/b.svg', 'https://api.oa2a.org@example.net/p'],
+  ])('builds the pair when the lookup returns %s', (_label, badgeImageUrl, badgeLinkUrl) => {
+    const badge = resolveBadge(REGISTRY, 'my-agent', 'npm', { ...lookup, badgeImageUrl, badgeLinkUrl });
+    expect(badge).toEqual(builtPair);
+  });
+
+  it('accepts both on the origin of the registry URL, whatever its letter case', () => {
+    const badge = resolveBadge(REGISTRY, 'my-agent', 'npm', {
+      ...lookup,
+      badgeImageUrl: 'https://API.oa2a.org/v1/trust/badge/my-agent?source=npm',
+      badgeLinkUrl: 'https://api.oa2a.org:443/v1/trust/lookup?package=my-agent&source=npm',
+    });
+    expect(badge).toEqual({
+      imageUrl: 'https://API.oa2a.org/v1/trust/badge/my-agent?source=npm',
+      linkUrl: 'https://api.oa2a.org:443/v1/trust/lookup?package=my-agent&source=npm',
+    });
+  });
+
+  it('accepts both on the origin of a registry URL with its own host and path', () => {
+    const badge = resolveBadge('https://registry.internal.example/api', 'my-agent', 'npm', {
+      ...lookup,
+      badgeImageUrl: 'https://registry.internal.example/b.svg',
+      badgeLinkUrl: 'https://registry.internal.example/p',
+    });
+    expect(badge).toEqual({
+      imageUrl: 'https://registry.internal.example/b.svg',
+      linkUrl: 'https://registry.internal.example/p',
+    });
+  });
+});
+
+describe('resolveBadge encoding of the package name and source', () => {
+  it('percent-encodes ( ) \' ! * ~ in the image path and the link query', () => {
+    const badge = resolveBadge(REGISTRY, "a(b)'!*~", 'n(p)m', { ...lookup, agentId: 'not-an-id' });
+    expect(badge).toEqual({
+      imageUrl: 'https://api.oa2a.org/v1/trust/badge/a%28b%29%27%21%2A%7E?source=n%28p%29m',
+      linkUrl: 'https://api.oa2a.org/v1/trust/lookup?package=a%28b%29%27%21%2A%7E&source=n%28p%29m',
+    });
+  });
+
+  it('writes a badge for a name with parentheses that a later run finds and replaces', () => {
+    const owner = { packageName: 'a(b)' };
+    const first = badgeMarkdown(resolveBadge(REGISTRY, 'a(b)', 'npm', { ...lookup, agentId: 'not-an-id' }));
+    const updated = badgeMarkdown(resolveBadge(REGISTRY, 'a(b)', 'npm', lookup));
+    const result = updateBadge(`# My Project\n${first}\n\nDescription.`, updated, owner);
+    expect(result).toContain(updated);
+    expect(result).not.toContain(first);
+    expect(result.match(/OpenA2A Trust Score/g)).toHaveLength(1);
   });
 });
 
