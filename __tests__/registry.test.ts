@@ -72,6 +72,17 @@ describe('lookupTrust', () => {
     ).rejects.toThrow('Failed to connect to registry');
   });
 
+  it('names the registry, not the parser error, when a 200 answer is not JSON', async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('<html>', { status: 200 }));
+
+    await expect(
+      lookupTrust('https://api.oa2a.org', 'some-package', 'npm', { retryDelayMs: 0 })
+    ).rejects.toThrow(
+      /^Registry at https:\/\/api\.oa2a\.org returned status 200 with a body that is not JSON\.$/
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('encodes package name and source in URL', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,

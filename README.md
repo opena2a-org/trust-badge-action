@@ -67,9 +67,17 @@ The action auto-detects your package name from `package.json`, `pyproject.toml`,
 | `profile-url` | URL the badge links to: the registry trust lookup for the package |
 | `updated` | Whether the README was updated (`true`/`false`) |
 
+## Failed Runs
+
+A package with no trust profile does not fail the run: the README is left as it is and `updated` is `false`. The run fails, with the README unchanged and no outputs set, when:
+
+- The registry does not answer. A lookup with no answer, a 429 or a 5xx is tried 3 times, each attempt allowed 15 seconds, with pauses of 2 and then 4 seconds: against a registry that does not answer, the run fails after about 51 seconds.
+- The registry answers with another unexpected status, or with a body that is not JSON.
+- The package name contains `/` (a scoped npm name or an `owner/repo` name) and the lookup returns no agent id in UUID form. The registry serves no badge image by name for such a package, so there is no badge to write.
+
 ## Badge Placement
 
-The action auto-places the badge after existing badges or the first heading. An existing OpenA2A badge for the same package is replaced where it is, on the same line; badges for other packages and examples inside code blocks are left as they are. To control placement manually, add markers:
+The action auto-places the badge after existing badges or the first heading. An existing OpenA2A badge for the same package is replaced where it is, on the same line; badges for other packages and examples inside code blocks or `<pre>` blocks are left as they are. To control placement manually, add markers:
 
 ```markdown
 <!-- opena2a-trust-badge -->

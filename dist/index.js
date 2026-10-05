@@ -100,7 +100,6 @@ function escapeProperty(s) {
         .replace(/:/g, '%3A')
         .replace(/,/g, '%2C');
 }
-//# sourceMappingURL=command.js.map
 
 /***/ }),
 
@@ -451,7 +450,6 @@ Object.defineProperty(exports, "toPlatformPath", ({ enumerable: true, get: funct
  * Platform utilities exports
  */
 exports.platform = __importStar(__nccwpck_require__(8968));
-//# sourceMappingURL=core.js.map
 
 /***/ }),
 
@@ -520,7 +518,6 @@ function prepareKeyValueMessage(key, value) {
     return `${key}<<${delimiter}${os.EOL}${convertedValue}${os.EOL}${delimiter}`;
 }
 exports.prepareKeyValueMessage = prepareKeyValueMessage;
-//# sourceMappingURL=file-command.js.map
 
 /***/ }),
 
@@ -604,7 +601,6 @@ class OidcClient {
     }
 }
 exports.OidcClient = OidcClient;
-//# sourceMappingURL=oidc-utils.js.map
 
 /***/ }),
 
@@ -673,7 +669,6 @@ function toPlatformPath(pth) {
     return pth.replace(/[/\\]/g, path.sep);
 }
 exports.toPlatformPath = toPlatformPath;
-//# sourceMappingURL=path-utils.js.map
 
 /***/ }),
 
@@ -774,7 +769,6 @@ function getDetails() {
     });
 }
 exports.getDetails = getDetails;
-//# sourceMappingURL=platform.js.map
 
 /***/ }),
 
@@ -1064,7 +1058,6 @@ const _summary = new Summary();
  */
 exports.markdownSummary = _summary;
 exports.summary = _summary;
-//# sourceMappingURL=summary.js.map
 
 /***/ }),
 
@@ -1111,7 +1104,6 @@ function toCommandProperties(annotationProperties) {
     };
 }
 exports.toCommandProperties = toCommandProperties;
-//# sourceMappingURL=utils.js.map
 
 /***/ }),
 
@@ -1221,7 +1213,6 @@ function getExecOutput(commandLine, args, options) {
     });
 }
 exports.getExecOutput = getExecOutput;
-//# sourceMappingURL=exec.js.map
 
 /***/ }),
 
@@ -1846,7 +1837,6 @@ class ExecState extends events.EventEmitter {
         state._setResult();
     }
 }
-//# sourceMappingURL=toolrunner.js.map
 
 /***/ }),
 
@@ -1909,7 +1899,6 @@ class Context {
     }
 }
 exports.Context = Context;
-//# sourceMappingURL=context.js.map
 
 /***/ }),
 
@@ -1957,7 +1946,6 @@ function getOctokit(token, options, ...additionalPlugins) {
     return new GitHubWithPlugins((0, utils_1.getOctokitOptions)(token, options));
 }
 exports.getOctokit = getOctokit;
-//# sourceMappingURL=github.js.map
 
 /***/ }),
 
@@ -2034,7 +2022,6 @@ function getApiBaseUrl() {
     return process.env['GITHUB_API_URL'] || 'https://api.github.com';
 }
 exports.getApiBaseUrl = getApiBaseUrl;
-//# sourceMappingURL=utils.js.map
 
 /***/ }),
 
@@ -2100,7 +2087,6 @@ function getOctokitOptions(token, options) {
     return opts;
 }
 exports.getOctokitOptions = getOctokitOptions;
-//# sourceMappingURL=utils.js.map
 
 /***/ }),
 
@@ -2188,7 +2174,6 @@ class PersonalAccessTokenCredentialHandler {
     }
 }
 exports.PersonalAccessTokenCredentialHandler = PersonalAccessTokenCredentialHandler;
-//# sourceMappingURL=auth.js.map
 
 /***/ }),
 
@@ -2847,7 +2832,6 @@ class HttpClient {
 }
 exports.HttpClient = HttpClient;
 const lowercaseKeys = (obj) => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
-//# sourceMappingURL=index.js.map
 
 /***/ }),
 
@@ -2949,7 +2933,6 @@ class DecodedURL extends URL {
         return this._decodedPassword;
     }
 }
-//# sourceMappingURL=proxy.js.map
 
 /***/ }),
 
@@ -3139,7 +3122,6 @@ function getCmdPath() {
     return (_a = process.env['COMSPEC']) !== null && _a !== void 0 ? _a : `cmd.exe`;
 }
 exports.getCmdPath = getCmdPath;
-//# sourceMappingURL=io-util.js.map
 
 /***/ }),
 
@@ -3445,7 +3427,6 @@ function copyFile(srcFile, destFile, force) {
         }
     });
 }
-//# sourceMappingURL=io.js.map
 
 /***/ }),
 
@@ -26022,7 +26003,6 @@ exports.SPECIAL_HEADERS = {
     'transfer-encoding': HEADER_STATE.TRANSFER_ENCODING,
     'upgrade': HEADER_STATE.UPGRADE,
 };
-//# sourceMappingURL=constants.js.map
 
 /***/ }),
 
@@ -26060,7 +26040,6 @@ function enumToMap(obj) {
     return res;
 }
 exports.enumToMap = enumToMap;
-//# sourceMappingURL=utils.js.map
 
 /***/ }),
 
@@ -29877,7 +29856,6 @@ function getUserAgent() {
 }
 
 exports.getUserAgent = getUserAgent;
-//# sourceMappingURL=index.js.map
 
 
 /***/ }),
@@ -30445,49 +30423,160 @@ const MARKER_END = '<!-- /opena2a-trust-badge -->';
 // (/v1/trust/<id>/badge.svg), the package badges (/v1/trust/badge/<name>?source=... and
 // /v1/trust/badge?package=...) and the earlier README example (/badge/<name>). The alt text stops
 // at its closing bracket, so a match never starts at an earlier image on the same line. The image
-// URL is captured.
-const BADGE_URL_PATTERN = /\[!\[[^\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/badge\/[^)]+|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+))\)\]\([^)]+\)/g;
-// The opening or closing line of a fenced code block: ``` or ~~~ after any indentation or
-// blockquote markers, then the info string.
-const FENCE = /^[ \t]*(?:>[ \t]*)*(`{3,}|~{3,})(.*)$/;
+// URL is captured. No part can run past a "[" in the alt text or a "(" in a URL, so a match attempt
+// never re-scans the text of the next badge and the time stays linear in the length of the README.
+const BADGE_URL_PATTERN = /\[!\[[^[\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^()]*|v1\/trust\/badge\/[^()]+|v1\/trust\/[^()]+\/badge\.svg|badge\/[^()]+))\)\]\([^()]+\)/g;
+// The blockquote markers at the start of a line: ">" after at most three spaces, and the one space
+// or tab after it.
+const BLOCKQUOTE = /^(?: {0,3}>[ \t]?)*/;
+// After its indentation, the opening or closing line of a fenced code block: ``` or ~~~, then the
+// info string.
+const FENCE = /^(`{3,}|~{3,})(.*)$/;
+// After its indentation, the first line of a raw HTML block (<pre>, <script>, <style> or
+// <textarea>), and the closing tag that ends one. GitHub shows the text in between as it is, never
+// as markdown.
+const RAW_HTML_START = /^<(?:pre|script|style|textarea)(?:[ \t>]|$)/i;
+const RAW_HTML_END = /<\/(?:pre|script|style|textarea)>/i;
+// After its indentation, a list item marker and the spaces after it.
+const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]+|$)/;
+// After its indentation, a line that ends the paragraph before it and starts no other: a heading,
+// a thematic break or a heading underline.
+const PARAGRAPH_END = /^(?:#{1,6}(?:[ \t].*)?|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|=+[ \t]*)$/;
+// The width of the spaces and tabs a line starts with, a tab advancing to the next multiple of four
+// columns, and the text after them.
+function splitIndentation(line) {
+    let width = 0;
+    let i = 0;
+    for (; i < line.length && (line[i] === ' ' || line[i] === '\t'); i++) {
+        width = line[i] === '\t' ? width + 4 - (width % 4) : width + 1;
+    }
+    return { width, text: line.slice(i) };
+}
 /**
- * The character ranges of the fenced code blocks in the content. Text inside a fence is an
- * example, never a badge or a marker this action owns. A fence that is never closed runs to the
- * end of the content.
+ * The character ranges of the code in the content, read the way GitHub renders it: fenced code
+ * blocks (``` or ~~~ indented at most three columns past the list item they are in), indented code
+ * blocks (four columns or more past it, where the line does not continue a paragraph) and raw HTML
+ * blocks such as <pre>. Text in code is an example, never a badge or a marker this action owns. A
+ * block that is never closed runs to the end of the content.
  */
-function fencedRanges(content) {
+function codeRanges(content) {
     const ranges = [];
-    let open = null;
+    // The content columns of the list items a line can belong to, the innermost last.
+    const lists = [];
+    let block = null;
+    // Whether the line before is paragraph text, which a line indented four columns more continues.
+    let paragraph = false;
     let offset = 0;
-    for (const line of content.split('\n')) {
-        const match = FENCE.exec(line.replace(/\r$/, ''));
-        if (open === null) {
-            // A backtick fence's info string cannot itself contain a backtick.
-            if (match && !(match[1][0] === '`' && match[2].includes('`'))) {
-                open = { fence: match[1], start: offset };
+    for (const rawLine of content.split('\n')) {
+        const lineStart = offset;
+        const lineEnd = offset + rawLine.length;
+        offset = lineEnd + 1;
+        const line = rawLine.replace(/\r$/, '');
+        let { width, text } = splitIndentation(line.replace(BLOCKQUOTE, ''));
+        const blank = text.trim() === '';
+        if (block?.kind === 'fence') {
+            const close = width - block.base < 4 ? FENCE.exec(text) : null;
+            if (close &&
+                close[1][0] === block.fence[0] &&
+                close[1].length >= block.fence.length &&
+                close[2].trim() === '') {
+                ranges.push([block.start, lineEnd]);
+                block = null;
+                paragraph = false;
+            }
+            continue;
+        }
+        if (block?.kind === 'html') {
+            if (RAW_HTML_END.test(line)) {
+                ranges.push([block.start, lineEnd]);
+                block = null;
+                paragraph = false;
+            }
+            continue;
+        }
+        if (block?.kind === 'indented') {
+            if (blank || width - block.base >= 4) {
+                if (!blank) {
+                    block.end = lineEnd;
+                }
+                continue;
+            }
+            // A line indented less ends the indented code block and is read on its own below
+            ranges.push([block.start, block.end]);
+            block = null;
+        }
+        if (blank) {
+            paragraph = false;
+            continue;
+        }
+        // A line indented less than a list item's content is not part of that item
+        while (lists.length > 0 && width < lists[lists.length - 1]) {
+            lists.pop();
+        }
+        let base = lists.length > 0 ? lists[lists.length - 1] : 0;
+        if (width - base >= 4) {
+            if (!paragraph) {
+                block = { kind: 'indented', start: lineStart, end: lineEnd, base };
+            }
+            continue;
+        }
+        if (PARAGRAPH_END.test(text)) {
+            paragraph = false;
+            continue;
+        }
+        // A list item marker starts the content of a new item, which may itself open a fence
+        for (let item = LIST_MARKER.exec(text); item; item = LIST_MARKER.exec(text)) {
+            width += item[0].length;
+            text = text.slice(item[0].length);
+            lists.push(width);
+            base = width;
+        }
+        const fence = FENCE.exec(text);
+        // A backtick fence's info string cannot itself contain a backtick.
+        if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
+            block = { kind: 'fence', start: lineStart, fence: fence[1], base };
+        }
+        else if (RAW_HTML_START.test(text)) {
+            if (RAW_HTML_END.test(text)) {
+                ranges.push([lineStart, lineEnd]);
+                paragraph = false;
+            }
+            else {
+                block = { kind: 'html', start: lineStart };
             }
         }
-        else if (match &&
-            match[1][0] === open.fence[0] &&
-            match[1].length >= open.fence.length &&
-            match[2].trim() === '') {
-            ranges.push([open.start, offset + line.length]);
-            open = null;
+        else {
+            paragraph = text.trim() !== '';
         }
-        offset += line.length + 1;
     }
-    if (open !== null) {
-        ranges.push([open.start, content.length]);
+    if (block !== null) {
+        ranges.push([block.start, block.kind === 'indented' ? block.end : content.length]);
     }
     return ranges;
 }
-function isFenced(index, fences) {
-    return fences.some(([start, end]) => index >= start && index < end);
+// Whether the index is in one of the ranges, which are in order and do not overlap.
+function inCode(index, code) {
+    let low = 0;
+    let high = code.length - 1;
+    while (low <= high) {
+        const middle = (low + high) >> 1;
+        const [start, end] = code[middle];
+        if (index < start) {
+            high = middle - 1;
+        }
+        else if (index >= end) {
+            low = middle + 1;
+        }
+        else {
+            return true;
+        }
+    }
+    return false;
 }
-// The first index of `search` at or after `from` that is outside every fence, or -1.
-function indexOutsideFences(content, search, fences, from = 0) {
+// The first index of `search` at or after `from` that is outside the code, or -1.
+function indexOutsideCode(content, search, code, from = 0) {
     let index = content.indexOf(search, from);
-    while (index !== -1 && isFenced(index, fences)) {
+    while (index !== -1 && inCode(index, code)) {
         index = content.indexOf(search, index + 1);
     }
     return index;
@@ -30525,13 +30614,13 @@ function namesOwner(imageUrl, owner) {
         decode(agent[1])?.toLowerCase() === owner.agentId?.toLowerCase());
 }
 /**
- * The first unmarked OpenA2A badge outside the fences whose image names the owner, or any such
+ * The first unmarked OpenA2A badge outside the code whose image names the owner, or any such
  * badge when no owner is given.
  */
-function findUnmarkedBadge(content, fences, owner) {
+function findUnmarkedBadge(content, code, owner) {
     for (const match of content.matchAll(BADGE_URL_PATTERN)) {
         const index = match.index ?? 0;
-        if (!isFenced(index, fences) && (owner === undefined || namesOwner(match[1], owner))) {
+        if (!inCode(index, code) && (owner === undefined || namesOwner(match[1], owner))) {
             return { index, text: match[0] };
         }
     }
@@ -30547,15 +30636,15 @@ function wrapWithMarkers(badgeMarkdown, inline = false) {
         : `${MARKER_START}\n${badgeMarkdown}\n${MARKER_END}`;
 }
 /**
- * Check if the README already contains an OpenA2A trust badge outside its code fences: the
+ * Check if the README already contains an OpenA2A trust badge outside its code: the
  * markers, or an unmarked badge for the owner (for any package when no owner is given).
  */
 function hasTrustBadge(content, owner) {
-    const fences = fencedRanges(content);
-    if (indexOutsideFences(content, MARKER_START, fences) !== -1) {
+    const code = codeRanges(content);
+    if (indexOutsideCode(content, MARKER_START, code) !== -1) {
         return true;
     }
-    return findUnmarkedBadge(content, fences, owner) !== null;
+    return findUnmarkedBadge(content, code, owner) !== null;
 }
 /**
  * Find the best position to insert the badge in the README content.
@@ -30568,10 +30657,10 @@ function hasTrustBadge(content, owner) {
  * 4. Otherwise, insert at the beginning of the file.
  */
 function findBadgePosition(content) {
-    // Lines inside a fenced code block are examples and never place the badge
-    const fences = fencedRanges(content);
+    // Lines inside code are examples and never place the badge
+    const code = codeRanges(content);
     // Check for existing markers
-    const markerIndex = indexOutsideFences(content, MARKER_START, fences);
+    const markerIndex = indexOutsideCode(content, MARKER_START, code);
     if (markerIndex !== -1) {
         return markerIndex;
     }
@@ -30581,7 +30670,7 @@ function findBadgePosition(content) {
     for (const rawLine of content.split('\n')) {
         const lineEnd = offset + rawLine.length;
         const line = rawLine.trim();
-        if (!isFenced(offset, fences)) {
+        if (!inCode(offset, code)) {
             // Track badge lines: [![...](...)](...) pattern
             if (line.startsWith('[![') && line.includes('](')) {
                 lastBadgeLineEnd = lineEnd;
@@ -30608,17 +30697,17 @@ function findBadgePosition(content) {
  * Insert or replace the trust badge in README content.
  * The operation is idempotent: running it twice produces the same result.
  *
- * Markers and badges inside fenced code blocks are left alone. When an owner is given, an
- * unmarked badge is replaced only if its image names the owner's package or agent id; a badge for
- * another package stays as it is.
+ * Markers and badges inside code (fenced and indented code blocks, <pre>) are left alone. When an
+ * owner is given, an unmarked badge is replaced only if its image names the owner's package or
+ * agent id; a badge for another package stays as it is.
  */
 function updateBadge(content, badgeMarkdown, owner) {
-    const fences = fencedRanges(content);
+    const code = codeRanges(content);
     const wrapped = wrapWithMarkers(badgeMarkdown);
     // Case 1: Markers exist -- replace content between them
-    const markerStartIndex = indexOutsideFences(content, MARKER_START, fences);
+    const markerStartIndex = indexOutsideCode(content, MARKER_START, code);
     if (markerStartIndex !== -1) {
-        const markerEndIndex = indexOutsideFences(content, MARKER_END, fences, markerStartIndex + MARKER_START.length);
+        const markerEndIndex = indexOutsideCode(content, MARKER_END, code, markerStartIndex + MARKER_START.length);
         if (markerEndIndex !== -1) {
             // Both markers present: replace everything between them, keeping markers that share a
             // line on that line
@@ -30641,7 +30730,7 @@ function updateBadge(content, badgeMarkdown, owner) {
     }
     // Case 2: Badge URL exists without markers -- replace the badge, on its own line or inline
     // among the other text of its line
-    const badge = findUnmarkedBadge(content, fences, owner);
+    const badge = findUnmarkedBadge(content, code, owner);
     if (badge) {
         const before = content.substring(0, badge.index);
         const after = content.substring(badge.index + badge.text.length);
@@ -30745,8 +30834,12 @@ async function lookupOnce(url, registryUrl, timeoutMs) {
             ? new TransientLookupError(message)
             : new Error(message);
     }
-    const data = (await response.json());
-    return data;
+    try {
+        return (await response.json());
+    }
+    catch {
+        throw new Error(`Registry at ${registryUrl} returned status ${response.status} with a body that is not JSON.`);
+    }
 }
 
 
