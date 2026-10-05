@@ -254,6 +254,51 @@ describe('updateBadge', () => {
       expect(result).toContain(example);
       expect(result).not.toContain('old-id');
     });
+
+    it.each([
+      ['an HTML <pre> block', `<pre>\n${example}\n</pre>`],
+      ['a <pre> block with attributes, in upper case', `<PRE lang="markdown">\n${example}\n</PRE>`],
+      ['a <pre> block on one line', `<pre>${example}</pre>`],
+      ['a <pre> block in a blockquote', `> <pre>\n> ${example}\n> </pre>`],
+      ['an indented code block', `Add this to your README:\n\n    ${example}`],
+      ['an indented code block that holds a fence', `Add this to your README:\n\n    \`\`\`markdown\n    ${example}\n    \`\`\``],
+      ['a fence indented four columns in an ordered list item', `1. Add this to your README:\n    \`\`\`markdown\n    ${example}\n    \`\`\``],
+      ['a fence in a nested list item', `- Setup\n  - Add this to your README:\n    \`\`\`markdown\n    ${example}\n    \`\`\``],
+    ])('leaves an unmarked badge inside %s alone', (_label, block) => {
+      const content = `# My Project\n\n${block}\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n${block}\n`);
+    });
+
+    it('reads a ``` line indented four columns after a blank line as indented code, not a fence', () => {
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+      const indented = 'Indented example:\n\n    ```';
+      const content = `# My Project\n\n${indented}\n\n${own}\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n\n${indented}\n\n${wrapWithMarkers(badge)}\n`);
+    });
+
+    it.each([
+      ['in a list item after a blank line', '- Badges:\n\n    '],
+      ['continuing a paragraph', 'Badges:\n    '],
+    ])('replaces a badge indented four columns %s, which is not code', (_label, before) => {
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+      const content = `# My Project\n\n${before}${own}\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n\n${before}${wrapWithMarkers(badge)}\n`);
+    });
+  });
+
+  describe('on a README built to slow the badge pattern down', () => {
+    it.each([
+      ['repeated badge prefixes with no closing parenthesis', '[![x](https://api.oa2a.org/v1/trust/badge/'],
+      ['repeated image openings with no closing bracket', '[!['],
+      ['repeated empty fenced code blocks', '```\n```\n'],
+      ['repeated indented code blocks', 'Text\n\n    code\n\n'],
+    ])('updates 300 KB of %s within a second', (_label, unit) => {
+      const content = unit.repeat(Math.ceil(300_000 / unit.length));
+      const started = Date.now();
+      const result = updateBadge(content, badge);
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(result).toContain(wrapWithMarkers(badge));
+    });
   });
 
   describe('with the package the badge is written for', () => {

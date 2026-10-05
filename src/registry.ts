@@ -107,6 +107,11 @@ async function lookupOnce(
       : new Error(message);
   }
 
-  const data = (await response.json()) as TrustLookupResponse;
-  return data;
+  try {
+    return (await response.json()) as TrustLookupResponse;
+  } catch {
+    throw new Error(
+      `Registry at ${registryUrl} returned status ${response.status} with a body that is not JSON.`
+    );
+  }
 }

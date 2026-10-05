@@ -147,6 +147,18 @@ describe('resolveBadge with badge URLs from the lookup', () => {
     });
   });
 
+  it('builds the pair from an http registry URL when the lookup returns http URLs on its origin', () => {
+    const badge = resolveBadge('http://registry.internal.example', 'my-agent', 'npm', {
+      ...lookup,
+      badgeImageUrl: 'http://registry.internal.example/b.svg',
+      badgeLinkUrl: 'http://registry.internal.example/p',
+    });
+    expect(badge).toEqual({
+      imageUrl: 'http://registry.internal.example/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg',
+      linkUrl: 'http://registry.internal.example/v1/trust/lookup?package=my-agent&source=npm',
+    });
+  });
+
   it('accepts both on the origin of a registry URL with its own host and path', () => {
     const badge = resolveBadge('https://registry.internal.example/api', 'my-agent', 'npm', {
       ...lookup,

@@ -5,12 +5,30 @@ const MARKER_END = '<!-- /opena2a-trust-badge -->';
 // (/v1/trust/<id>/badge.svg), the package badges (/v1/trust/badge/<name>?source=... and
 // /v1/trust/badge?package=...) and the earlier README example (/badge/<name>). The alt text stops
 // at its closing bracket, so a match never starts at an earlier image on the same line. The image
-// URL is captured.
-const BADGE_URL_PATTERN = /\[!\[[^\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/badge\/[^)]+|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+))\)\]\([^)]+\)/g;
+// URL is captured. No part can run past a "[" in the alt text or a "(" in a URL, so a match attempt
+// never re-scans the text of the next badge and the time stays linear in the length of the README.
+const BADGE_URL_PATTERN = /\[!\[[^[\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^()]*|v1\/trust\/badge\/[^()]+|v1\/trust\/[^()]+\/badge\.svg|badge\/[^()]+))\)\]\([^()]+\)/g;
 
-// The opening or closing line of a fenced code block: ``` or ~~~ after any indentation or
-// blockquote markers, then the info string.
-const FENCE = /^[ \t]*(?:>[ \t]*)*(`{3,}|~{3,})(.*)$/;
+// The blockquote markers at the start of a line: ">" after at most three spaces, and the one space
+// or tab after it.
+const BLOCKQUOTE = /^(?: {0,3}>[ \t]?)*/;
+
+// After its indentation, the opening or closing line of a fenced code block: ``` or ~~~, then the
+// info string.
+const FENCE = /^(`{3,}|~{3,})(.*)$/;
+
+// After its indentation, the first line of a raw HTML block (<pre>, <script>, <style> or
+// <textarea>), and the closing tag that ends one. GitHub shows the text in between as it is, never
+// as markdown.
+const RAW_HTML_START = /^<(?:pre|script|style|textarea)(?:[ \t>]|$)/i;
+const RAW_HTML_END = /<\/(?:pre|script|style|textarea)>/i;
+
+// After its indentation, a list item marker and the spaces after it.
+const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]+|$)/;
+
+// After its indentation, a line that ends the paragraph before it and starts no other: a heading,
+// a thematic break or a heading underline.
+const PARAGRAPH_END = /^(?:#{1,6}(?:[ \t].*)?|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|=+[ \t]*)$/;
 
 /**
  * The package a README badge is written for. An unmarked badge is replaced only when its image
@@ -23,47 +41,148 @@ export interface BadgeOwner {
 
 type Range = [start: number, end: number];
 
-/**
- * The character ranges of the fenced code blocks in the content. Text inside a fence is an
- * example, never a badge or a marker this action owns. A fence that is never closed runs to the
- * end of the content.
- */
-function fencedRanges(content: string): Range[] {
-  const ranges: Range[] = [];
-  let open: { fence: string; start: number } | null = null;
-  let offset = 0;
-  for (const line of content.split('\n')) {
-    const match = FENCE.exec(line.replace(/\r$/, ''));
-    if (open === null) {
-      // A backtick fence's info string cannot itself contain a backtick.
-      if (match && !(match[1][0] === '`' && match[2].includes('`'))) {
-        open = { fence: match[1], start: offset };
-      }
-    } else if (
-      match &&
-      match[1][0] === open.fence[0] &&
-      match[1].length >= open.fence.length &&
-      match[2].trim() === ''
-    ) {
-      ranges.push([open.start, offset + line.length]);
-      open = null;
-    }
-    offset += line.length + 1;
+type OpenBlock =
+  | { kind: 'fence'; start: number; fence: string; base: number }
+  | { kind: 'html'; start: number }
+  | { kind: 'indented'; start: number; end: number; base: number };
+
+// The width of the spaces and tabs a line starts with, a tab advancing to the next multiple of four
+// columns, and the text after them.
+function splitIndentation(line: string): { width: number; text: string } {
+  let width = 0;
+  let i = 0;
+  for (; i < line.length && (line[i] === ' ' || line[i] === '\t'); i++) {
+    width = line[i] === '\t' ? width + 4 - (width % 4) : width + 1;
   }
-  if (open !== null) {
-    ranges.push([open.start, content.length]);
+  return { width, text: line.slice(i) };
+}
+
+/**
+ * The character ranges of the code in the content, read the way GitHub renders it: fenced code
+ * blocks (``` or ~~~ indented at most three columns past the list item they are in), indented code
+ * blocks (four columns or more past it, where the line does not continue a paragraph) and raw HTML
+ * blocks such as <pre>. Text in code is an example, never a badge or a marker this action owns. A
+ * block that is never closed runs to the end of the content.
+ */
+function codeRanges(content: string): Range[] {
+  const ranges: Range[] = [];
+  // The content columns of the list items a line can belong to, the innermost last.
+  const lists: number[] = [];
+  let block: OpenBlock | null = null;
+  // Whether the line before is paragraph text, which a line indented four columns more continues.
+  let paragraph = false;
+  let offset = 0;
+  for (const rawLine of content.split('\n')) {
+    const lineStart = offset;
+    const lineEnd = offset + rawLine.length;
+    offset = lineEnd + 1;
+    const line = rawLine.replace(/\r$/, '');
+    let { width, text } = splitIndentation(line.replace(BLOCKQUOTE, ''));
+    const blank = text.trim() === '';
+
+    if (block?.kind === 'fence') {
+      const close = width - block.base < 4 ? FENCE.exec(text) : null;
+      if (
+        close &&
+        close[1][0] === block.fence[0] &&
+        close[1].length >= block.fence.length &&
+        close[2].trim() === ''
+      ) {
+        ranges.push([block.start, lineEnd]);
+        block = null;
+        paragraph = false;
+      }
+      continue;
+    }
+    if (block?.kind === 'html') {
+      if (RAW_HTML_END.test(line)) {
+        ranges.push([block.start, lineEnd]);
+        block = null;
+        paragraph = false;
+      }
+      continue;
+    }
+    if (block?.kind === 'indented') {
+      if (blank || width - block.base >= 4) {
+        if (!blank) {
+          block.end = lineEnd;
+        }
+        continue;
+      }
+      // A line indented less ends the indented code block and is read on its own below
+      ranges.push([block.start, block.end]);
+      block = null;
+    }
+
+    if (blank) {
+      paragraph = false;
+      continue;
+    }
+    // A line indented less than a list item's content is not part of that item
+    while (lists.length > 0 && width < lists[lists.length - 1]) {
+      lists.pop();
+    }
+    let base = lists.length > 0 ? lists[lists.length - 1] : 0;
+    if (width - base >= 4) {
+      if (!paragraph) {
+        block = { kind: 'indented', start: lineStart, end: lineEnd, base };
+      }
+      continue;
+    }
+    if (PARAGRAPH_END.test(text)) {
+      paragraph = false;
+      continue;
+    }
+    // A list item marker starts the content of a new item, which may itself open a fence
+    for (let item = LIST_MARKER.exec(text); item; item = LIST_MARKER.exec(text)) {
+      width += item[0].length;
+      text = text.slice(item[0].length);
+      lists.push(width);
+      base = width;
+    }
+    const fence = FENCE.exec(text);
+    // A backtick fence's info string cannot itself contain a backtick.
+    if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
+      block = { kind: 'fence', start: lineStart, fence: fence[1], base };
+    } else if (RAW_HTML_START.test(text)) {
+      if (RAW_HTML_END.test(text)) {
+        ranges.push([lineStart, lineEnd]);
+        paragraph = false;
+      } else {
+        block = { kind: 'html', start: lineStart };
+      }
+    } else {
+      paragraph = text.trim() !== '';
+    }
+  }
+  if (block !== null) {
+    ranges.push([block.start, block.kind === 'indented' ? block.end : content.length]);
   }
   return ranges;
 }
 
-function isFenced(index: number, fences: Range[]): boolean {
-  return fences.some(([start, end]) => index >= start && index < end);
+// Whether the index is in one of the ranges, which are in order and do not overlap.
+function inCode(index: number, code: Range[]): boolean {
+  let low = 0;
+  let high = code.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    const [start, end] = code[middle];
+    if (index < start) {
+      high = middle - 1;
+    } else if (index >= end) {
+      low = middle + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
 }
 
-// The first index of `search` at or after `from` that is outside every fence, or -1.
-function indexOutsideFences(content: string, search: string, fences: Range[], from = 0): number {
+// The first index of `search` at or after `from` that is outside the code, or -1.
+function indexOutsideCode(content: string, search: string, code: Range[], from = 0): number {
   let index = content.indexOf(search, from);
-  while (index !== -1 && isFenced(index, fences)) {
+  while (index !== -1 && inCode(index, code)) {
     index = content.indexOf(search, index + 1);
   }
   return index;
@@ -104,17 +223,17 @@ function namesOwner(imageUrl: string, owner: BadgeOwner): boolean {
 }
 
 /**
- * The first unmarked OpenA2A badge outside the fences whose image names the owner, or any such
+ * The first unmarked OpenA2A badge outside the code whose image names the owner, or any such
  * badge when no owner is given.
  */
 function findUnmarkedBadge(
   content: string,
-  fences: Range[],
+  code: Range[],
   owner?: BadgeOwner
 ): { index: number; text: string } | null {
   for (const match of content.matchAll(BADGE_URL_PATTERN)) {
     const index = match.index ?? 0;
-    if (!isFenced(index, fences) && (owner === undefined || namesOwner(match[1], owner))) {
+    if (!inCode(index, code) && (owner === undefined || namesOwner(match[1], owner))) {
       return { index, text: match[0] };
     }
   }
@@ -132,15 +251,15 @@ export function wrapWithMarkers(badgeMarkdown: string, inline = false): string {
 }
 
 /**
- * Check if the README already contains an OpenA2A trust badge outside its code fences: the
+ * Check if the README already contains an OpenA2A trust badge outside its code: the
  * markers, or an unmarked badge for the owner (for any package when no owner is given).
  */
 export function hasTrustBadge(content: string, owner?: BadgeOwner): boolean {
-  const fences = fencedRanges(content);
-  if (indexOutsideFences(content, MARKER_START, fences) !== -1) {
+  const code = codeRanges(content);
+  if (indexOutsideCode(content, MARKER_START, code) !== -1) {
     return true;
   }
-  return findUnmarkedBadge(content, fences, owner) !== null;
+  return findUnmarkedBadge(content, code, owner) !== null;
 }
 
 /**
@@ -154,11 +273,11 @@ export function hasTrustBadge(content: string, owner?: BadgeOwner): boolean {
  * 4. Otherwise, insert at the beginning of the file.
  */
 export function findBadgePosition(content: string): number {
-  // Lines inside a fenced code block are examples and never place the badge
-  const fences = fencedRanges(content);
+  // Lines inside code are examples and never place the badge
+  const code = codeRanges(content);
 
   // Check for existing markers
-  const markerIndex = indexOutsideFences(content, MARKER_START, fences);
+  const markerIndex = indexOutsideCode(content, MARKER_START, code);
   if (markerIndex !== -1) {
     return markerIndex;
   }
@@ -171,7 +290,7 @@ export function findBadgePosition(content: string): number {
     const lineEnd = offset + rawLine.length;
     const line = rawLine.trim();
 
-    if (!isFenced(offset, fences)) {
+    if (!inCode(offset, code)) {
       // Track badge lines: [![...](...)](...) pattern
       if (line.startsWith('[![') && line.includes('](')) {
         lastBadgeLineEnd = lineEnd;
@@ -204,21 +323,21 @@ export function findBadgePosition(content: string): number {
  * Insert or replace the trust badge in README content.
  * The operation is idempotent: running it twice produces the same result.
  *
- * Markers and badges inside fenced code blocks are left alone. When an owner is given, an
- * unmarked badge is replaced only if its image names the owner's package or agent id; a badge for
- * another package stays as it is.
+ * Markers and badges inside code (fenced and indented code blocks, <pre>) are left alone. When an
+ * owner is given, an unmarked badge is replaced only if its image names the owner's package or
+ * agent id; a badge for another package stays as it is.
  */
 export function updateBadge(content: string, badgeMarkdown: string, owner?: BadgeOwner): string {
-  const fences = fencedRanges(content);
+  const code = codeRanges(content);
   const wrapped = wrapWithMarkers(badgeMarkdown);
 
   // Case 1: Markers exist -- replace content between them
-  const markerStartIndex = indexOutsideFences(content, MARKER_START, fences);
+  const markerStartIndex = indexOutsideCode(content, MARKER_START, code);
   if (markerStartIndex !== -1) {
-    const markerEndIndex = indexOutsideFences(
+    const markerEndIndex = indexOutsideCode(
       content,
       MARKER_END,
-      fences,
+      code,
       markerStartIndex + MARKER_START.length
     );
     if (markerEndIndex !== -1) {
@@ -244,7 +363,7 @@ export function updateBadge(content: string, badgeMarkdown: string, owner?: Badg
 
   // Case 2: Badge URL exists without markers -- replace the badge, on its own line or inline
   // among the other text of its line
-  const badge = findUnmarkedBadge(content, fences, owner);
+  const badge = findUnmarkedBadge(content, code, owner);
   if (badge) {
     const before = content.substring(0, badge.index);
     const after = content.substring(badge.index + badge.text.length);

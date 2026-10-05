@@ -173,9 +173,12 @@ describe('run', () => {
     expect(mockOutputs.updated).toBe('true');
   });
 
-  it('writes nothing and fails with the reason for a scoped name the lookup returned no agent id for', async () => {
+  it.each([
+    ['no agent id', ''],
+    ['an agent id that is not a UUID', 'x'],
+  ])('writes nothing and fails with the reason for a scoped name the lookup returned %s for', async (_label, agentId) => {
     mockInputs['package-name'] = '@scope/my-agent';
-    mockLookup({ ...lookup, agentId: '', name: '@scope/my-agent' });
+    mockLookup({ ...lookup, agentId, name: '@scope/my-agent' });
     writeReadme('# My Project\n');
 
     await run();
