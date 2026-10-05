@@ -1,10 +1,20 @@
-import { lookupTrust, TrustLookupResponse } from '../src/registry';
+import { lookupTrust, TrustLookupResponse, trustQuery } from '../src/registry';
 
 // Save original fetch
 const originalFetch = global.fetch;
 
 afterEach(() => {
   global.fetch = originalFetch;
+});
+
+describe('trustQuery', () => {
+  it('percent-encodes the characters encodeURIComponent keeps: ( ) \' ! * ~', () => {
+    expect(trustQuery("a(b)'!*~", 'n(p)m')).toBe('package=a%28b%29%27%21%2A%7E&source=n%28p%29m');
+  });
+
+  it('encodes a scoped name as before', () => {
+    expect(trustQuery('@scope/my-package', 'npm')).toBe('package=%40scope%2Fmy-package&source=npm');
+  });
 });
 
 describe('lookupTrust', () => {

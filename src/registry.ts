@@ -24,10 +24,21 @@ const DEFAULT_LOOKUP_OPTIONS: Required<LookupOptions> = {
 };
 
 /**
+ * encodeURIComponent, with ( ) ' ! * ~ percent-encoded as well, so no character of the value is
+ * read as markdown syntax where the URL is written into a badge or a link.
+ */
+export function encodeUrlComponent(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[()'!*~]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+/**
  * The query that names a package to the registry's trust routes.
  */
 export function trustQuery(packageName: string, source: string): string {
-  return `package=${encodeURIComponent(packageName)}&source=${encodeURIComponent(source)}`;
+  return `package=${encodeUrlComponent(packageName)}&source=${encodeUrlComponent(source)}`;
 }
 
 // A failure that a later attempt can succeed past: no response (network error or timeout), a rate
