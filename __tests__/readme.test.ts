@@ -145,6 +145,15 @@ describe('updateBadge', () => {
     expect(result.match(/\[!\[OpenA2A Trust/g)).toHaveLength(1);
   });
 
+  it('replaces a package-name badge without markers instead of adding a second one', () => {
+    const existingBadge = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/old-name?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=old-name&source=npm)';
+    const content = `# My Project\n${existingBadge}\n\nDescription.`;
+    const result = updateBadge(content, badge);
+    expect(result).toContain(badge);
+    expect(result).not.toContain('old-name');
+    expect(result.match(/\[!\[OpenA2A Trust/g)).toHaveLength(1);
+  });
+
   it('replaces the earlier README example badge without markers', () => {
     const existingBadge = '[![OpenA2A Trust](https://api.oa2a.org/badge/my-package)](https://registry.opena2a.org/package/my-package)';
     const content = `# My Project\n${existingBadge}\n\nDescription.`;
@@ -165,6 +174,7 @@ describe('updateBadge', () => {
 
   it.each([
     ['the package form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge?package=old-name&source=npm)](https://api.oa2a.org/v1/trust/lookup?package=old-name&source=npm)'],
+    ['the package-name form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/old-name?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=old-name&source=npm)'],
     ['the earlier README example form', '[![OpenA2A Trust](https://api.oa2a.org/badge/old-name)](https://registry.opena2a.org/package/old-name)'],
     ['the agent-id form', '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-name/badge.svg)](https://registry.opena2a.org/agents/old-name)'],
   ])('keeps other badges on the same line when it replaces an unmarked badge in %s', (_label, existingBadge) => {

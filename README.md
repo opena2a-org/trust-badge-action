@@ -5,7 +5,7 @@
 A GitHub Action that adds and auto-updates an OpenA2A Registry trust score badge in your README.
 
 ```
-[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge?package=hackmyagent&source=npm)](https://api.oa2a.org/v1/trust/lookup?package=hackmyagent&source=npm)
+[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=hackmyagent&source=npm)
 ```
 
 ## Usage

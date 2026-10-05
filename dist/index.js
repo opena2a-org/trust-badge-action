@@ -29945,23 +29945,31 @@ function isSafeBadgeUrl(value) {
         return false;
     }
 }
+// An agent id in the form the registry issues. Nothing else is written into the image path.
+const AGENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isAgentId(value) {
+    return typeof value === 'string' && AGENT_ID.test(value);
+}
 /**
  * Resolve the badge image and the page it links to for a package.
  *
- * The registry's lookup response names both (badgeImageUrl, badgeLinkUrl), so the route form is
- * decided in one place. When the lookup does not return both, the badge is built from the
- * package and source inputs:
- *   image: <registry>/v1/trust/badge?package=<name>&source=<source>
+ * When the registry's lookup response carries both badgeImageUrl and badgeLinkUrl, they are used
+ * as returned. The registry returns neither today, so the badge is built from routes it serves:
+ *   image: <registry>/v1/trust/<agentId>/badge.svg, with the agent id the lookup returned
  *   link:  <registry>/v1/trust/lookup?package=<name>&source=<source>
+ * An agent id that is not a UUID is never written; the image then names the package instead:
+ *   image: <registry>/v1/trust/badge/<name>?source=<source>
  */
 function resolveBadge(registryUrl, packageName, source, trustData) {
     if (isSafeBadgeUrl(trustData.badgeImageUrl) && isSafeBadgeUrl(trustData.badgeLinkUrl)) {
         return { imageUrl: trustData.badgeImageUrl, linkUrl: trustData.badgeLinkUrl };
     }
-    const query = (0, registry_1.trustQuery)(packageName, source);
+    const imageUrl = isAgentId(trustData.agentId)
+        ? `${registryUrl}/v1/trust/${trustData.agentId}/badge.svg`
+        : `${registryUrl}/v1/trust/badge/${encodeURIComponent(packageName)}?source=${encodeURIComponent(source)}`;
     return {
-        imageUrl: `${registryUrl}/v1/trust/badge?${query}`,
-        linkUrl: `${registryUrl}/v1/trust/lookup?${query}`,
+        imageUrl,
+        linkUrl: `${registryUrl}/v1/trust/lookup?${(0, registry_1.trustQuery)(packageName, source)}`,
     };
 }
 /**
@@ -30410,11 +30418,11 @@ exports.findBadgePosition = findBadgePosition;
 exports.updateBadge = updateBadge;
 const MARKER_START = '<!-- opena2a-trust-badge -->';
 const MARKER_END = '<!-- /opena2a-trust-badge -->';
-// An unmarked OpenA2A badge in any form this action or its README has written: the package badge
-// (/v1/trust/badge?package=...), the agent-id badge (/v1/trust/<id>/badge.svg) and the earlier
-// README example (/badge/<name>). The alt text stops at its closing bracket, so a match never
-// starts at an earlier image on the same line.
-const BADGE_URL_PATTERN = /\[!\[[^\]]*\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+)\)\]\([^)]+\)/;
+// An unmarked OpenA2A badge in any form this action or its README has written: the agent-id badge
+// (/v1/trust/<id>/badge.svg), the package badges (/v1/trust/badge/<name>?source=... and
+// /v1/trust/badge?package=...) and the earlier README example (/badge/<name>). The alt text stops
+// at its closing bracket, so a match never starts at an earlier image on the same line.
+const BADGE_URL_PATTERN = /\[!\[[^\]]*\]\(https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^)]*|v1\/trust\/badge\/[^)]+|v1\/trust\/[^)]+\/badge\.svg|badge\/[^)]+)\)\]\([^)]+\)/;
 /**
  * Wrap badge markdown with HTML comment markers for future updates.
  */
