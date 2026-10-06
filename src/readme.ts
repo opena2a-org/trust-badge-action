@@ -36,8 +36,9 @@ const TAG_ATTRIBUTE = /[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t"
 const OPEN_TAG_END = /[ \t]*\/?>[ \t]*$/y;
 const CLOSING_TAG_END = /[ \t]*>[ \t]*$/y;
 
-// Whether the text is one complete open or closing tag of a name other than pre, script, style and
-// textarea, with nothing after it but spaces and tabs.
+// Whether the text is one complete open tag of a name other than pre, script, style and textarea,
+// or one complete closing tag of any name, with nothing after it but spaces and tabs. A lone
+// closing </pre> starts an HTML block the way a lone </div> or </span> does.
 function isSingleTagLine(text: string): boolean {
   if (text[0] !== '<') {
     return false;
@@ -45,7 +46,7 @@ function isSingleTagLine(text: string): boolean {
   const closing = text[1] === '/';
   TAG_NAME.lastIndex = closing ? 2 : 1;
   const name = TAG_NAME.exec(text);
-  if (name === null || /^(?:pre|script|style|textarea)$/i.test(name[0])) {
+  if (name === null || (!closing && /^(?:pre|script|style|textarea)$/i.test(name[0]))) {
     return false;
   }
   let index = TAG_NAME.lastIndex;
@@ -62,10 +63,11 @@ function isSingleTagLine(text: string): boolean {
 
 // After its indentation, the first line of each kind of HTML block (a raw text block such as
 // <pre>, a comment, a processing instruction, a declaration, CDATA, a block tag such as <div>, and
-// a line that holds one open or closing tag of any other name), and what ends the block: the line
-// that contains `end`, the first line included, or else a blank line. GitHub shows the text of an
-// HTML block as HTML, never as markdown; the text of a raw text block is shown as it is, an example
-// the way a code block is. A line with one tag of any other name cannot interrupt a paragraph.
+// a line that holds one open tag of any other name or one closing tag), and what ends the block:
+// the line that contains `end`, the first line included, or else a blank line. GitHub shows the
+// text of an HTML block as HTML, never as markdown; the text of a raw text block is shown as it
+// is, an example the way a code block is. A line with one tag of any other name cannot interrupt
+// a paragraph.
 const HTML_BLOCKS: {
   start: { test(text: string): boolean };
   end?: RegExp;
@@ -359,7 +361,10 @@ function findUnmarkedBadge(
 /**
  * Wrap badge markdown with HTML comment markers for future updates, each on a line of its own.
  * The lines after the first start with `indent`, the indentation of the line the start marker is
- * on, so the badge and the end marker stay in the list item or paragraph that line is in.
+ * on, so the badge and the end marker stay in the list item that line is in. They stay in a
+ * paragraph that line continues only when the indentation is four columns or more past the content
+ * of the list item the paragraph is in, or past the margin outside a list: a start marker indented
+ * less starts an HTML block, which ends the paragraph.
  */
 export function wrapWithMarkers(badgeMarkdown: string, lineEnding = '\n', indent = ''): string {
   return `${MARKER_START}${lineEnding}${indent}${badgeMarkdown}${lineEnding}${indent}${MARKER_END}`;
@@ -372,14 +377,22 @@ function lineEndingOf(content: string): string {
   return firstBreak > 0 && content[firstBreak - 1] === '\r' ? '\r\n' : '\n';
 }
 
+// The indentation, blockquote markers and list item markers that start a line, the list item
+// markers turned into spaces: what a line after it starts with to stay in the same blockquote and
+// list item.
+function containersOf(linePrefix: string): { length: number; continuation: string } {
+  const containers = /^(?:[ \t>]|(?:[-+*]|\d{1,9}[.)])(?=[ \t]))*/.exec(linePrefix)?.[0] ?? '';
+  return { length: containers.length, continuation: containers.replace(/[^ \t>]/g, ' ') };
+}
+
 // What follows a start marker that shares its line with the badge after it. A marker that starts
 // the content of a line starts an HTML block, which GitHub shows with the rest of the line as raw
 // text. So when only indentation, blockquote markers and list item markers come before the marker
 // on its line, the marker ends that line and the badge starts the next one, in the same blockquote
 // and list item.
 function breakAfterStart(linePrefix: string, lineEnding: string): string {
-  const containers = linePrefix.replace(/(?:[-+*]|\d{1,9}[.)])(?=[ \t])/g, '');
-  return /^[ \t>]*$/.test(containers) ? `${lineEnding}${linePrefix.replace(/[^ \t>]/g, ' ')}` : '';
+  const containers = containersOf(linePrefix);
+  return containers.length === linePrefix.length ? `${lineEnding}${containers.continuation}` : '';
 }
 
 /**
@@ -484,11 +497,24 @@ export function updateBadge(content: string, badgeMarkdown: string, owner?: Badg
       const before = content.substring(0, markerStartIndex);
       const after = content.substring(markerEndIndex + MARKER_END.length);
       const inner = content.substring(markerStartIndex + MARKER_START.length, markerEndIndex);
-      const opening =
-        /^[ \t]*\r?\n[ \t>]*/.exec(inner)?.[0] ??
-        breakAfterStart(before.substring(before.lastIndexOf('\n') + 1), lineEnding);
+      const startLinePrefix = before.substring(before.lastIndexOf('\n') + 1);
+      const keptBreak = /^([ \t]*\r?\n)[ \t>]*/.exec(inner);
       const closing = /\r?\n[ \t>]*$/.exec(inner)?.[0] ?? '';
-      return before + MARKER_START + opening + badgeMarkdown + closing + MARKER_END + after;
+      const rebuild = (opening: string): string =>
+        before + MARKER_START + opening + badgeMarkdown + closing + MARKER_END + after;
+      if (keptBreak === null) {
+        return rebuild(breakAfterStart(startLinePrefix, lineEnding));
+      }
+      const result = rebuild(keptBreak[0]);
+      // After a start marker line that is not paragraph text (the marker starts the content of its
+      // line, or ends a heading), kept indentation of four columns or more makes the badge line
+      // indented code, shown as text. The badge line then takes the indentation of the start
+      // marker's own line.
+      const badgeIndex = before.length + MARKER_START.length + keptBreak[0].length;
+      if (inCode(badgeIndex, findCode(result).examples)) {
+        return rebuild(keptBreak[1] + containersOf(startLinePrefix).continuation);
+      }
+      return result;
     }
     // Orphaned start marker (no end marker): replace from start marker
     // to the next blank line or end of that line, before the line ending
@@ -510,9 +536,12 @@ export function updateBadge(content: string, badgeMarkdown: string, owner?: Badg
     const linePrefix = before.substring(before.lastIndexOf('\n') + 1);
     const restOfLine = linePrefix + (afterLineEnd === -1 ? after : after.substring(0, afterLineEnd));
     if (restOfLine.trim() === '') {
-      // The badge and the end marker keep the badge's indentation, which holds them in a list
-      // item or paragraph the badge continues
-      return before + wrapWithMarkers(badgeMarkdown, lineEnding, linePrefix) + after;
+      // The badge and the end marker keep the spaces and tabs that indent the badge, which hold
+      // them in a list item the badge continues (see wrapWithMarkers). Other blank characters
+      // before the badge, such as a byte order mark or a no-break space, are not indentation and
+      // stay only before the start marker.
+      const indent = /^[ \t]*/.exec(linePrefix)?.[0] ?? '';
+      return before + wrapWithMarkers(badgeMarkdown, lineEnding, indent) + after;
     }
     return (
       before +
