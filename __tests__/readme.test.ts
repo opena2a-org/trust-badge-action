@@ -198,6 +198,23 @@ describe('updateBadge', () => {
     expect(result).not.toContain('old-name');
   });
 
+  describe('a badge whose link URL holds parentheses', () => {
+    const existingBadge = '[![Trust](https://api.oa2a.org/v1/trust/old/badge.svg)](https://registry.opena2a.org/agents/old?x=(1))';
+
+    it('replaces the badge instead of adding a second one', () => {
+      const content = `# T\n\n${existingBadge}\n`;
+      expect(updateBadge(content, badge)).toBe(`# T\n\n${wrapWithMarkers(badge)}\n`);
+      expect(hasTrustBadge(content)).toBe(true);
+    });
+
+    it('ends the badge at the parenthesis that closes its link', () => {
+      const content = `# T\n\n${existingBadge} (see the registry)\n`;
+      expect(updateBadge(content, badge)).toBe(
+        `# T\n\n${wrapWithMarkers(badge, true)} (see the registry)\n`
+      );
+    });
+  });
+
   describe('code fences', () => {
     const example = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/badge/example?source=npm)](https://api.oa2a.org/v1/trust/lookup?package=example&source=npm)';
 
@@ -264,6 +281,18 @@ describe('updateBadge', () => {
       ['an indented code block that holds a fence', `Add this to your README:\n\n    \`\`\`markdown\n    ${example}\n    \`\`\``],
       ['a fence indented four columns in an ordered list item', `1. Add this to your README:\n    \`\`\`markdown\n    ${example}\n    \`\`\``],
       ['a fence in a nested list item', `- Setup\n  - Add this to your README:\n    \`\`\`markdown\n    ${example}\n    \`\`\``],
+      ['an HTML comment', `<!--\n${example}\n-->`],
+      ['an HTML comment on one line', `<!-- ${example} -->`],
+      ['the rest of a line that an HTML comment starts', `<!-- example -->${example}`],
+      ['a <div> block', `<div>\n${example}\n</div>`],
+      ['a <p> block with attributes', `<p align="center">\n${example}\n</p>`],
+      ['a processing instruction', `<?php\n${example}\n?>`],
+      ['a declaration', `<!DOCTYPE\n${example}\n>`],
+      ['a CDATA section', `<![CDATA[\n${example}\n]]>`],
+      ['a block opened by a line that holds one other tag', `<a href="https://example.com">\n${example}\n</a>`],
+      ['an indented code block that starts a list item', `-     ${example}`],
+      ['an indented code block that starts an ordered list item', `1.      ${example}`],
+      ['an indented code block after a list marker and two tabs', `-\t\t${example}`],
     ])('leaves an unmarked badge inside %s alone', (_label, block) => {
       const content = `# My Project\n\n${block}\n`;
       expect(updateBadge(content, badge)).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n${block}\n`);
@@ -284,6 +313,49 @@ describe('updateBadge', () => {
       const content = `# My Project\n\n${before}${own}\n`;
       expect(updateBadge(content, badge)).toBe(`# My Project\n\n${before}${wrapWithMarkers(badge)}\n`);
     });
+
+    it.each([
+      ['after a one-line HTML comment', '<!-- badges: start -->\n', '\n<!-- badges: end -->'],
+      ['in a <div> block that a blank line ends', '<div align="center">\n\n', '\n\n</div>'],
+      ['on a line after a closing </pre>', `<pre>\n${example}\n</pre>\n`, ''],
+      ['after a tag line that continues a paragraph', 'Badges:\n<a href="https://example.com">\n', ''],
+    ])('replaces a badge %s, which is not code', (_label, before, after) => {
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+      const content = `# My Project\n\n${before}${own}${after}\n`;
+      expect(updateBadge(content, badge)).toBe(
+        `# My Project\n\n${before}${wrapWithMarkers(badge)}${after}\n`
+      );
+    });
+
+    it('replaces a badge in a list item after a marker and four spaces, which is not code', () => {
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+      const content = `# My Project\n\n-    ${own}\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n\n-    ${wrapWithMarkers(badge, true)}\n`);
+    });
+
+    it('keeps markers inside a <div> block as the place for the badge', () => {
+      const block = '<div>\n<!-- opena2a-trust-badge -->\nold\n<!-- /opena2a-trust-badge -->\n</div>';
+      const content = `# My Project\n\n${block}\n`;
+      expect(updateBadge(content, badge)).toBe(
+        `# My Project\n\n<div>\n${wrapWithMarkers(badge)}\n</div>\n`
+      );
+      expect(hasTrustBadge(content)).toBe(true);
+    });
+
+    it('does not close a fence on a fence line indented four columns past the block', () => {
+      const fence = `\`\`\`\n    \`\`\`\n${example}\n\`\`\``;
+      const content = `# My Project\n\n${fence}\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n${fence}\n`);
+    });
+
+    it.each([
+      ['a heading', '## Usage'],
+      ['a thematic break', '***'],
+    ])('reads a badge indented four columns directly after %s as indented code', (_label, line) => {
+      const block = `${line}\n    ${example}`;
+      const content = `# My Project\n\n${block}\n`;
+      expect(updateBadge(content, badge)).toBe(`# My Project\n${wrapWithMarkers(badge)}\n\n${block}\n`);
+    });
   });
 
   describe('on a README built to slow the badge pattern down', () => {
@@ -292,6 +364,10 @@ describe('updateBadge', () => {
       ['repeated image openings with no closing bracket', '[!['],
       ['repeated empty fenced code blocks', '```\n```\n'],
       ['repeated indented code blocks', 'Text\n\n    code\n\n'],
+      ['repeated badges whose link holds a pair of parentheses and never closes', '[![x](https://api.oa2a.org/v1/trust/badge/a)](l(p)'],
+      ['repeated badges with an empty link', '[![x](https://api.oa2a.org/v1/trust/badge/a)]()'],
+      ['repeated HTML comment openings', '<!--'],
+      ['one tag with repeated attributes and no closing bracket', '<a x=1 '],
     ])('updates 300 KB of %s within a second', (_label, unit) => {
       const content = unit.repeat(Math.ceil(300_000 / unit.length));
       const started = Date.now();
