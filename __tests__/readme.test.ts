@@ -314,13 +314,34 @@ describe('updateBadge', () => {
     ])('replaces a badge indented four columns %s, which is not code', (_label, before) => {
       const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
       const content = `# My Project\n\n${before}${own}\n`;
-      expect(updateBadge(content, badge)).toBe(`# My Project\n\n${before}${wrapWithMarkers(badge)}\n`);
+      const result = updateBadge(content, badge);
+      expect(result).toBe(
+        `# My Project\n\n${before}<!-- opena2a-trust-badge -->\n    ${badge}\n    <!-- /opena2a-trust-badge -->\n`
+      );
+      expect(updateBadge(result, badge)).toBe(result);
+    });
+
+    it.each([
+      ['a list item', '- text\n', '  '],
+      ['a nested list item', '- a\n  - b\n', '    '],
+      ['a list item, indented with a tab', '- text\n', '\t'],
+    ])('keeps a badge alone on a continuation line of %s, and its end marker, in that item', (_label, item, indent) => {
+      const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+      const content = `# P\n\n${item}${indent}${own}\n`;
+      const result = updateBadge(content, badge);
+      expect(result).toBe(
+        `# P\n\n${item}${indent}<!-- opena2a-trust-badge -->\n${indent}${badge}\n${indent}<!-- /opena2a-trust-badge -->\n`
+      );
+      expect(updateBadge(result, badge)).toBe(result);
     });
 
     it.each([
       ['after a one-line HTML comment', '<!-- badges: start -->\n', '\n<!-- badges: end -->'],
       ['in a <div> block that a blank line ends', '<div align="center">\n\n', '\n\n</div>'],
       ['on a line after a closing </pre>', `<pre>\n${example}\n</pre>\n`, ''],
+      // A line with one pre, script, style or textarea tag of its own starts no HTML block
+      ['on a line after a closing </pre> with no <pre> before it', '</pre>\n', ''],
+      ['on a line after a closing </script> with no <script> before it', '</script>\n', ''],
       ['after a tag line that continues a paragraph', 'Badges:\n<a href="https://example.com">\n', ''],
     ])('replaces a badge %s, which is not code', (_label, before, after) => {
       const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
@@ -513,6 +534,39 @@ describe('updateBadge', () => {
     it('keeps markers on their own lines when they are on their own lines', () => {
       const content = `# My Project\n<!-- opena2a-trust-badge -->\nold\n<!-- /opena2a-trust-badge -->\n`;
       expect(updateBadge(content, badge)).toBe(`# My Project\n${wrapWithMarkers(badge)}\n`);
+    });
+
+    it('keeps the line break after a start marker that follows text on its line', () => {
+      const content = 'text <!-- opena2a-trust-badge -->\n  old<!-- /opena2a-trust-badge -->\n';
+      const result = updateBadge(content, badge);
+      expect(result).toBe(`text <!-- opena2a-trust-badge -->\n  ${badge}<!-- /opena2a-trust-badge -->\n`);
+      expect(updateBadge(result, badge)).toBe(result);
+    });
+  });
+
+  describe('in a README with CRLF line endings', () => {
+    const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
+    const wrapped = `<!-- opena2a-trust-badge -->\r\n${badge}\r\n<!-- /opena2a-trust-badge -->`;
+    const npmBadge = '[![npm](https://img.shields.io/npm/v/p)](https://www.npmjs.com/package/p)';
+
+    it.each([
+      ['inserts the badge after the heading', '# P\r\n\r\nDescription.\r\n', `# P\r\n${wrapped}\r\n\r\nDescription.\r\n`],
+      ['inserts the badge after the other badges', `# P\r\n${npmBadge}\r\n`, `# P\r\n${npmBadge}\r\n${wrapped}\r\n`],
+      ['inserts the badge at the top', 'Description.\r\n', `${wrapped}\r\n\r\nDescription.\r\n`],
+      ['replaces a badge alone on its line', `# P\r\n\r\n${own}\r\n`, `# P\r\n\r\n${wrapped}\r\n`],
+      ['replaces a badge alone on a list continuation line', `# P\r\n\r\n- text\r\n  ${own}\r\n`, `# P\r\n\r\n- text\r\n  <!-- opena2a-trust-badge -->\r\n  ${badge}\r\n  <!-- /opena2a-trust-badge -->\r\n`],
+      ['replaces a badge that starts a line with other text', `# P\r\n\r\n${own} x\r\n`, `# P\r\n\r\n<!-- opena2a-trust-badge -->\r\n${badge}<!-- /opena2a-trust-badge --> x\r\n`],
+      ['moves an inline start marker that starts its line onto a line of its own', `# P\r\n\r\n<!-- opena2a-trust-badge -->${own}<!-- /opena2a-trust-badge --> x\r\n`, `# P\r\n\r\n<!-- opena2a-trust-badge -->\r\n${badge}<!-- /opena2a-trust-badge --> x\r\n`],
+      ['replaces an orphaned start marker through the blank line', '# P\r\n<!-- opena2a-trust-badge -->\r\nold\r\n\r\nDescription.\r\n', `# P\r\n${wrapped}\r\n\r\nDescription.\r\n`],
+    ])('%s and ends every line it adds with CRLF', (_label, content, expected) => {
+      const result = updateBadge(content, badge);
+      expect(result).toBe(expected);
+      expect(result.replace(/\r\n/g, '')).not.toMatch(/[\r\n]/);
+      expect(updateBadge(result, badge)).toBe(result);
+    });
+
+    it('places the badge before the CR that ends a line', () => {
+      expect(findBadgePosition('# P\r\n\r\nDescription.\r\n')).toBe('# P'.length);
     });
   });
 });

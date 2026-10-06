@@ -30716,22 +30716,27 @@ function findUnmarkedBadge(content, code, owner) {
     return null;
 }
 /**
- * Wrap badge markdown with HTML comment markers for future updates: on lines of their own, or on
- * one line when the badge sits on a line with other text.
+ * Wrap badge markdown with HTML comment markers for future updates, each on a line of its own.
+ * The lines after the first start with `indent`, the indentation of the line the start marker is
+ * on, so the badge and the end marker stay in the list item or paragraph that line is in.
  */
-function wrapWithMarkers(badgeMarkdown, inline = false) {
-    return inline
-        ? `${MARKER_START}${badgeMarkdown}${MARKER_END}`
-        : `${MARKER_START}\n${badgeMarkdown}\n${MARKER_END}`;
+function wrapWithMarkers(badgeMarkdown, lineEnding = '\n', indent = '') {
+    return `${MARKER_START}${lineEnding}${indent}${badgeMarkdown}${lineEnding}${indent}${MARKER_END}`;
+}
+// The line ending of the content, to end the lines this action adds with: CRLF when the first
+// line ends with one, else LF.
+function lineEndingOf(content) {
+    const firstBreak = content.indexOf('\n');
+    return firstBreak > 0 && content[firstBreak - 1] === '\r' ? '\r\n' : '\n';
 }
 // What follows a start marker that shares its line with the badge after it. A marker that starts
 // the content of a line starts an HTML block, which GitHub shows with the rest of the line as raw
 // text. So when only indentation, blockquote markers and list item markers come before the marker
 // on its line, the marker ends that line and the badge starts the next one, in the same blockquote
 // and list item.
-function breakAfterStart(linePrefix) {
+function breakAfterStart(linePrefix, lineEnding) {
     const containers = linePrefix.replace(/(?:[-+*]|\d{1,9}[.)])(?=[ \t])/g, '');
-    return /^[ \t>]*$/.test(containers) ? `\n${linePrefix.replace(/[^ \t>]/g, ' ')}` : '';
+    return /^[ \t>]*$/.test(containers) ? `${lineEnding}${linePrefix.replace(/[^ \t>]/g, ' ')}` : '';
 }
 /**
  * Check if the README already contains an OpenA2A trust badge outside its code: the
@@ -30767,15 +30772,17 @@ function findBadgePosition(content) {
     let offset = 0;
     for (const rawLine of content.split('\n')) {
         const lineEnd = offset + rawLine.length;
+        // The end of the line's text, before the CR of a CRLF line ending
+        const textEnd = rawLine.endsWith('\r') ? lineEnd - 1 : lineEnd;
         const line = rawLine.trim();
         if (!inCode(offset, code.all)) {
             // Track badge lines: [![...](...)](...) pattern
             if (line.startsWith('[![') && line.includes('](')) {
-                lastBadgeLineEnd = lineEnd;
+                lastBadgeLineEnd = textEnd;
             }
             // Track the first top-level heading
             if (firstHeadingEnd === -1 && line.startsWith('#')) {
-                firstHeadingEnd = lineEnd;
+                firstHeadingEnd = textEnd;
             }
         }
         offset = lineEnd + 1;
@@ -30802,7 +30809,9 @@ function findBadgePosition(content) {
  */
 function updateBadge(content, badgeMarkdown, owner) {
     const code = findCode(content);
-    const wrapped = wrapWithMarkers(badgeMarkdown);
+    // The lines this adds end the way the README's lines do
+    const lineEnding = lineEndingOf(content);
+    const wrapped = wrapWithMarkers(badgeMarkdown, lineEnding);
     // Case 1: Markers exist -- replace content between them
     const markerStartIndex = indexOutsideCode(content, MARKER_START, code.examples);
     if (markerStartIndex !== -1) {
@@ -30815,18 +30824,15 @@ function updateBadge(content, badgeMarkdown, owner) {
             const after = content.substring(markerEndIndex + MARKER_END.length);
             const inner = content.substring(markerStartIndex + MARKER_START.length, markerEndIndex);
             const opening = /^[ \t]*\r?\n[ \t>]*/.exec(inner)?.[0] ??
-                breakAfterStart(before.substring(before.lastIndexOf('\n') + 1));
+                breakAfterStart(before.substring(before.lastIndexOf('\n') + 1), lineEnding);
             const closing = /\r?\n[ \t>]*$/.exec(inner)?.[0] ?? '';
             return before + MARKER_START + opening + badgeMarkdown + closing + MARKER_END + after;
         }
         // Orphaned start marker (no end marker): replace from start marker
-        // to the next blank line or end of that line
+        // to the next blank line or end of that line, before the line ending
         const afterStart = content.substring(markerStartIndex + MARKER_START.length);
-        const blankLineIndex = afterStart.indexOf('\n\n');
-        const endIndex = blankLineIndex !== -1
-            ? markerStartIndex + MARKER_START.length + blankLineIndex
-            : content.indexOf('\n', markerStartIndex + MARKER_START.length);
-        const cutEnd = endIndex !== -1 ? endIndex : content.length;
+        const lineBreak = /\r?\n\r?\n/.exec(afterStart) ?? /\r?\n/.exec(afterStart);
+        const cutEnd = markerStartIndex + MARKER_START.length + (lineBreak?.index ?? afterStart.length);
         const before = content.substring(0, markerStartIndex);
         const after = content.substring(cutEnd);
         return before + wrapped + after;
@@ -30841,20 +30847,27 @@ function updateBadge(content, badgeMarkdown, owner) {
         const linePrefix = before.substring(before.lastIndexOf('\n') + 1);
         const restOfLine = linePrefix + (afterLineEnd === -1 ? after : after.substring(0, afterLineEnd));
         if (restOfLine.trim() === '') {
-            return before + wrapped + after;
+            // The badge and the end marker keep the badge's indentation, which holds them in a list
+            // item or paragraph the badge continues
+            return before + wrapWithMarkers(badgeMarkdown, lineEnding, linePrefix) + after;
         }
-        return before + MARKER_START + breakAfterStart(linePrefix) + badgeMarkdown + MARKER_END + after;
+        return (before +
+            MARKER_START +
+            breakAfterStart(linePrefix, lineEnding) +
+            badgeMarkdown +
+            MARKER_END +
+            after);
     }
     // Case 3: Insert at the best position
     const position = findBadgePosition(content);
     if (position === 0) {
         // Insert at the top
-        return wrapped + '\n\n' + content;
+        return wrapped + lineEnding + lineEnding + content;
     }
     // Insert after the found position (add newlines for separation)
     const before = content.substring(0, position);
     const after = content.substring(position);
-    return before + '\n' + wrapped + after;
+    return before + lineEnding + wrapped + after;
 }
 
 
