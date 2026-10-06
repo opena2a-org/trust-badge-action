@@ -25,6 +25,7 @@ fi
 drift="$(git status --porcelain --untracked-files=all -- "$DIR")"
 if [ -n "$drift" ]; then
   echo "verify-dist: $DIR/ does not match the clean rebuild. Run 'npm run build' and commit the result."
+  echo "verify-dist: build with node_modules installed inside the repository ('npm ci'). A node_modules symlinked from elsewhere changes the bundle's module ids, so the bundle differs even when src/ does not."
   echo "$drift"
   git --no-pager diff --stat -- "$DIR" || true
   exit 1

@@ -30432,6 +30432,8 @@ const BADGE_URL_PATTERN = /\[!\[[^[\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry
 // The blockquote markers at the start of a line: ">" after at most three spaces, and the one space
 // or tab after it.
 const BLOCKQUOTE = /^(?: {0,3}>[ \t]?)*/;
+// The byte order mark GitHub skips at the start of a README.
+const BYTE_ORDER_MARK = /^\uFEFF/;
 // After its indentation, the opening or closing line of a fenced code block: ``` or ~~~, then the
 // info string.
 const FENCE = /^(`{3,}|~{3,})(.*)$/;
@@ -30477,8 +30479,8 @@ function isSingleTagLine(text) {
 // a line that holds one open tag of any other name or one closing tag), and what ends the block:
 // the line that contains `end`, the first line included, or else a blank line. GitHub shows the
 // text of an HTML block as HTML, never as markdown; the text of a raw text block is shown as it
-// is, an example the way a code block is. A line with one tag of any other name cannot interrupt
-// a paragraph.
+// is, an example the way a code block is. A line that holds one such tag cannot interrupt a
+// paragraph.
 const HTML_BLOCKS = [
     {
         start: /^<(?:pre|script|style|textarea)(?:[ \t>]|$)/i,
@@ -30499,8 +30501,10 @@ const HTML_BLOCKS = [
 // After its indentation, a list item marker, which a space, a tab or the end of the line follows.
 const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])(?=[ \t]|$)/;
 // After its indentation, a line that ends the paragraph before it and starts no other: a heading,
-// a thematic break or a heading underline.
-const PARAGRAPH_END = /^(?:#{1,6}(?:[ \t].*)?|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|=+[ \t]*)$/;
+// a thematic break or a heading underline. A thematic break is matched as three marks and then any
+// run of marks, spaces and tabs, with no repeated group, so a line of millions of marks cannot
+// overflow the stack.
+const PARAGRAPH_END = /^(?:#{1,6}(?:[ \t].*)?|-[ \t]*-[ \t]*-[- \t]*|\*[ \t]*\*[ \t]*\*[* \t]*|_[ \t]*_[ \t]*_[_ \t]*|=+[ \t]*)$/;
 // The column the text of a line starts at after its spaces and tabs, for a line that starts at
 // `column`, a tab advancing to the next multiple of four columns, and the text after them.
 function splitIndentation(line, column = 0) {
@@ -30515,7 +30519,8 @@ function splitIndentation(line, column = 0) {
  * The code in the content, read the way GitHub renders it: fenced code blocks (``` or ~~~ indented
  * at most three columns past the list item they are in), indented code blocks (four columns or
  * more past it, where the line does not continue a paragraph) and HTML blocks. A block that is
- * never closed runs to the end of the list item it is in, or else to the end of the content.
+ * never closed runs to the end of the blockquote or list item it is in, or else to the end of the
+ * content. A blank line is one that holds nothing but spaces and tabs.
  */
 function findCode(content) {
     const code = { examples: [], all: [] };
@@ -30535,12 +30540,23 @@ function findCode(content) {
         const lineStart = offset;
         const lineEnd = offset + rawLine.length;
         offset = lineEnd + 1;
-        const line = rawLine.replace(/\r$/, '');
-        let { width, text } = splitIndentation(line.replace(BLOCKQUOTE, ''));
-        const blank = text.trim() === '';
-        // A line indented less than the content of the list item a fenced code block or an HTML block
-        // is in ends that item and the block with it, and is read on its own below
-        if (block !== null && block.kind !== 'indented' && !blank && width < block.base) {
+        const line = (lineStart === 0 ? rawLine.replace(BYTE_ORDER_MARK, '') : rawLine).replace(/\r$/, '');
+        const quote = BLOCKQUOTE.exec(line)?.[0] ?? '';
+        // The number of blockquotes the line is in
+        let depth = 0;
+        for (const char of quote) {
+            if (char === '>') {
+                depth++;
+            }
+        }
+        let { width, text } = splitIndentation(line.slice(quote.length));
+        const blank = text === '';
+        // A line outside the blockquote a fenced code block or an HTML block is in ends that blockquote
+        // and the block with it, blank or not, and so does a line indented less than the content of the
+        // list item the block is in. The line is then read on its own below.
+        if (block !== null &&
+            block.kind !== 'indented' &&
+            (depth < block.depth || (!blank && width < block.base))) {
             add(block.start, lineStart - 1, block.kind === 'fence' || block.rawText);
             block = null;
             paragraph = false;
@@ -30550,7 +30566,7 @@ function findCode(content) {
             if (close &&
                 close[1][0] === block.fence[0] &&
                 close[1].length >= block.fence.length &&
-                close[2].trim() === '') {
+                /^[ \t]*$/.test(close[2])) {
                 add(block.start, lineEnd, true);
                 block = null;
                 paragraph = false;
@@ -30619,7 +30635,7 @@ function findCode(content) {
         const html = HTML_BLOCKS.find((kind) => (kind.interruptsParagraph || !paragraph || item) && kind.start.test(text));
         // A backtick fence's info string cannot itself contain a backtick.
         if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
-            block = { kind: 'fence', start: lineStart, fence: fence[1], base };
+            block = { kind: 'fence', start: lineStart, fence: fence[1], base, depth };
         }
         else if (html) {
             if (html.end?.test(text)) {
@@ -30633,11 +30649,12 @@ function findCode(content) {
                     close: html.end,
                     rawText: html.rawText === true,
                     base,
+                    depth,
                 };
             }
         }
         else {
-            paragraph = text.trim() !== '';
+            paragraph = text !== '';
         }
     }
     if (block !== null) {
@@ -30786,7 +30803,8 @@ function findBadgePosition(content) {
         const lineEnd = offset + rawLine.length;
         // The end of the line's text, before the CR of a CRLF line ending
         const textEnd = rawLine.endsWith('\r') ? lineEnd - 1 : lineEnd;
-        const line = rawLine.trim();
+        // The text after the line's spaces and tabs, and after a byte order mark that starts the README
+        const line = (offset === 0 ? rawLine.replace(BYTE_ORDER_MARK, '') : rawLine).replace(/^[ \t]+/, '');
         if (!inCode(offset, code.all)) {
             // Track badge lines: [![...](...)](...) pattern
             if (line.startsWith('[![') && line.includes('](')) {
@@ -30889,8 +30907,9 @@ function updateBadge(content, badgeMarkdown, owner) {
     // Case 3: Insert at the best position
     const position = findBadgePosition(content);
     if (position === 0) {
-        // Insert at the top
-        return wrapped + lineEnding + lineEnding + content;
+        // Insert at the top, after a byte order mark, which GitHub skips only at the start of a README
+        const byteOrderMark = BYTE_ORDER_MARK.exec(content)?.[0] ?? '';
+        return byteOrderMark + wrapped + lineEnding + lineEnding + content.slice(byteOrderMark.length);
     }
     // Insert after the found position (add newlines for separation)
     const before = content.substring(0, position);
