@@ -40,6 +40,7 @@ cell "a clean dist passes" '[ $rc = 0 ] && grep -q "matches the clean rebuild" <
 # 2 a tracked bundle file changed by the rebuild
 fresh; echo 'rebuilt differently' > "$T/repo/dist/index.js"; run
 cell "a changed tracked file fails and is named" '[ $rc = 1 ] && grep -q "dist/index.js" <<< "$OUT"'
+cell "a failure says to build with node_modules inside the repository" '[ $rc = 1 ] && grep -q "node_modules installed inside the repository" <<< "$OUT"'
 
 # 3 an untracked file under dist (the case git diff never reports)
 fresh; echo 'stray' > "$T/repo/dist/extra.js"; run
