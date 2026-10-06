@@ -340,9 +340,9 @@ describe('updateBadge', () => {
     });
 
     it.each([
-      ['a byte order mark', '', '﻿', ''],
-      ['a no-break space', '# P\n\n', ' ', ''],
-      ['spaces and a no-break space in a list item', '# P\n\n- text\n', '   ', '  '],
+      ['a byte order mark', '', '\uFEFF', ''],
+      ['a no-break space', '# P\n\n', '\u00A0', ''],
+      ['spaces and a no-break space in a list item', '# P\n\n- text\n', '  \u00A0', '  '],
     ])('keeps only the spaces and tabs before a badge alone on its line after %s as its indentation', (_label, head, prefix, indent) => {
       const own = '[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/old-id/badge.svg)](https://registry.opena2a.org/agents/old-id)';
       const content = `${head}${prefix}${own}\n\n# End\n`;
