@@ -30423,29 +30423,58 @@ const MARKER_END = '<!-- /opena2a-trust-badge -->';
 // (/v1/trust/<id>/badge.svg), the package badges (/v1/trust/badge/<name>?source=... and
 // /v1/trust/badge?package=...) and the earlier README example (/badge/<name>). The alt text stops
 // at its closing bracket, so a match never starts at an earlier image on the same line. The image
-// URL is captured. No part can run past a "[" in the alt text or a "(" in a URL, so a match attempt
-// never re-scans the text of the next badge and the time stays linear in the length of the README.
-const BADGE_URL_PATTERN = /\[!\[[^[\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^()]*|v1\/trust\/badge\/[^()]+|v1\/trust\/[^()]+\/badge\.svg|badge\/[^()]+))\)\]\([^()]+\)/g;
+// URL is captured. The link URL may hold parentheses in balanced pairs one level deep, as in
+// ?x=(1). No part can run past a "[" in the alt text, a "(" in the image URL or a "(" inside a pair
+// in the link URL. A match attempt that fails can read through a later badge only where that
+// badge's link holds no parenthesis, and that badge then matches or fails at once, so the time
+// stays linear in the length of the README.
+const BADGE_URL_PATTERN = /\[!\[[^[\]]*\]\((https:\/\/(?:api\.oa2a\.org|registry\.opena2a\.org)\/(?:v1\/trust\/badge\?[^()]*|v1\/trust\/badge\/[^()]+|v1\/trust\/[^()]+\/badge\.svg|badge\/[^()]+))\)\]\((?:[^()]|\([^()]*\))+\)/g;
 // The blockquote markers at the start of a line: ">" after at most three spaces, and the one space
 // or tab after it.
 const BLOCKQUOTE = /^(?: {0,3}>[ \t]?)*/;
 // After its indentation, the opening or closing line of a fenced code block: ``` or ~~~, then the
 // info string.
 const FENCE = /^(`{3,}|~{3,})(.*)$/;
-// After its indentation, the first line of a raw HTML block (<pre>, <script>, <style> or
-// <textarea>), and the closing tag that ends one. GitHub shows the text in between as it is, never
-// as markdown.
-const RAW_HTML_START = /^<(?:pre|script|style|textarea)(?:[ \t>]|$)/i;
-const RAW_HTML_END = /<\/(?:pre|script|style|textarea)>/i;
-// After its indentation, a list item marker and the spaces after it.
-const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]+|$)/;
+// The names of the tags that start an HTML block when an open or closing tag starts the line.
+const HTML_BLOCK_TAGS = 'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|' +
+    'dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|' +
+    'hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|' +
+    'section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul';
+// After its indentation, the first line of each kind of HTML block (a raw text block such as
+// <pre>, a comment, a processing instruction, a declaration, CDATA, a block tag such as <div>, and
+// a line that holds one open or closing tag of any other name), and what ends the block: the line
+// that contains `end`, the first line included, or else a blank line. GitHub shows the text of an
+// HTML block as HTML, never as markdown; the text of a raw text block is shown as it is, an example
+// the way a code block is. A line with one tag of any other name cannot interrupt a paragraph.
+const HTML_BLOCKS = [
+    {
+        start: /^<(?:pre|script|style|textarea)(?:[ \t>]|$)/i,
+        end: /<\/(?:pre|script|style|textarea)>/i,
+        rawText: true,
+        interruptsParagraph: true,
+    },
+    { start: /^<!--/, end: /-->/, interruptsParagraph: true },
+    { start: /^<\?/, end: /\?>/, interruptsParagraph: true },
+    { start: /^<![A-Za-z]/, end: />/, interruptsParagraph: true },
+    { start: /^<!\[CDATA\[/, end: /\]\]>/, interruptsParagraph: true },
+    {
+        start: new RegExp(`^<\\/?(?:${HTML_BLOCK_TAGS})(?:[ \\t>]|\\/>|$)`, 'i'),
+        interruptsParagraph: true,
+    },
+    {
+        start: /^(?:<(?!(?:pre|script|style|textarea)(?![A-Za-z0-9-]))[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t"'=<>`]+|'[^']*'|"[^"]*"))?)*[ \t]*\/?>|<\/(?!(?:pre|script|style|textarea)(?![A-Za-z0-9-]))[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*$/i,
+        interruptsParagraph: false,
+    },
+];
+// After its indentation, a list item marker, which a space, a tab or the end of the line follows.
+const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])(?=[ \t]|$)/;
 // After its indentation, a line that ends the paragraph before it and starts no other: a heading,
 // a thematic break or a heading underline.
 const PARAGRAPH_END = /^(?:#{1,6}(?:[ \t].*)?|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|=+[ \t]*)$/;
-// The width of the spaces and tabs a line starts with, a tab advancing to the next multiple of four
-// columns, and the text after them.
-function splitIndentation(line) {
-    let width = 0;
+// The column the text of a line starts at after its spaces and tabs, for a line that starts at
+// `column`, a tab advancing to the next multiple of four columns, and the text after them.
+function splitIndentation(line, column = 0) {
+    let width = column;
     let i = 0;
     for (; i < line.length && (line[i] === ' ' || line[i] === '\t'); i++) {
         width = line[i] === '\t' ? width + 4 - (width % 4) : width + 1;
@@ -30453,14 +30482,19 @@ function splitIndentation(line) {
     return { width, text: line.slice(i) };
 }
 /**
- * The character ranges of the code in the content, read the way GitHub renders it: fenced code
- * blocks (``` or ~~~ indented at most three columns past the list item they are in), indented code
- * blocks (four columns or more past it, where the line does not continue a paragraph) and raw HTML
- * blocks such as <pre>. Text in code is an example, never a badge or a marker this action owns. A
- * block that is never closed runs to the end of the content.
+ * The code in the content, read the way GitHub renders it: fenced code blocks (``` or ~~~ indented
+ * at most three columns past the list item they are in), indented code blocks (four columns or
+ * more past it, where the line does not continue a paragraph) and HTML blocks. A block that is
+ * never closed runs to the end of the content.
  */
-function codeRanges(content) {
-    const ranges = [];
+function findCode(content) {
+    const code = { examples: [], all: [] };
+    const add = (start, end, example) => {
+        code.all.push([start, end]);
+        if (example) {
+            code.examples.push([start, end]);
+        }
+    };
     // The content columns of the list items a line can belong to, the innermost last.
     const lists = [];
     let block = null;
@@ -30480,15 +30514,16 @@ function codeRanges(content) {
                 close[1][0] === block.fence[0] &&
                 close[1].length >= block.fence.length &&
                 close[2].trim() === '') {
-                ranges.push([block.start, lineEnd]);
+                add(block.start, lineEnd, true);
                 block = null;
                 paragraph = false;
             }
             continue;
         }
         if (block?.kind === 'html') {
-            if (RAW_HTML_END.test(line)) {
-                ranges.push([block.start, lineEnd]);
+            // A block with no closing text ends before a blank line
+            if (block.close ? block.close.test(text) : blank) {
+                add(block.start, block.close ? lineEnd : lineStart - 1, block.rawText);
                 block = null;
                 paragraph = false;
             }
@@ -30502,7 +30537,7 @@ function codeRanges(content) {
                 continue;
             }
             // A line indented less ends the indented code block and is read on its own below
-            ranges.push([block.start, block.end]);
+            add(block.start, block.end, true);
             block = null;
         }
         if (blank) {
@@ -30524,25 +30559,38 @@ function codeRanges(content) {
             paragraph = false;
             continue;
         }
-        // A list item marker starts the content of a new item, which may itself open a fence
-        for (let item = LIST_MARKER.exec(text); item; item = LIST_MARKER.exec(text)) {
-            width += item[0].length;
-            text = text.slice(item[0].length);
-            lists.push(width);
-            base = width;
+        // A list item marker starts the content of a new item, which may itself open a fence. The
+        // content starts after the spaces that follow the marker, or one column after the marker when
+        // nothing follows it or five columns or more do: the rest of the line is then indented code.
+        let item = false;
+        for (let marker = LIST_MARKER.exec(text); marker; marker = LIST_MARKER.exec(text)) {
+            const markerEnd = width + marker[0].length;
+            ({ width, text } = splitIndentation(text.slice(marker[0].length), markerEnd));
+            base = text === '' || width - markerEnd >= 5 ? markerEnd + 1 : width;
+            lists.push(base);
+            item = true;
+            if (width - base >= 4) {
+                break;
+            }
+        }
+        if (text !== '' && width - base >= 4) {
+            block = { kind: 'indented', start: lineStart, end: lineEnd, base };
+            paragraph = false;
+            continue;
         }
         const fence = FENCE.exec(text);
+        const html = HTML_BLOCKS.find((kind) => (kind.interruptsParagraph || !paragraph || item) && kind.start.test(text));
         // A backtick fence's info string cannot itself contain a backtick.
         if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
             block = { kind: 'fence', start: lineStart, fence: fence[1], base };
         }
-        else if (RAW_HTML_START.test(text)) {
-            if (RAW_HTML_END.test(text)) {
-                ranges.push([lineStart, lineEnd]);
+        else if (html) {
+            if (html.end?.test(text)) {
+                add(lineStart, lineEnd, html.rawText === true);
                 paragraph = false;
             }
             else {
-                block = { kind: 'html', start: lineStart };
+                block = { kind: 'html', start: lineStart, close: html.end, rawText: html.rawText === true };
             }
         }
         else {
@@ -30550,9 +30598,9 @@ function codeRanges(content) {
         }
     }
     if (block !== null) {
-        ranges.push([block.start, block.kind === 'indented' ? block.end : content.length]);
+        add(block.start, block.kind === 'indented' ? block.end : content.length, block.kind !== 'html' || block.rawText);
     }
-    return ranges;
+    return code;
 }
 // Whether the index is in one of the ranges, which are in order and do not overlap.
 function inCode(index, code) {
@@ -30640,11 +30688,11 @@ function wrapWithMarkers(badgeMarkdown, inline = false) {
  * markers, or an unmarked badge for the owner (for any package when no owner is given).
  */
 function hasTrustBadge(content, owner) {
-    const code = codeRanges(content);
-    if (indexOutsideCode(content, MARKER_START, code) !== -1) {
+    const code = findCode(content);
+    if (indexOutsideCode(content, MARKER_START, code.examples) !== -1) {
         return true;
     }
-    return findUnmarkedBadge(content, code, owner) !== null;
+    return findUnmarkedBadge(content, code.all, owner) !== null;
 }
 /**
  * Find the best position to insert the badge in the README content.
@@ -30657,10 +30705,10 @@ function hasTrustBadge(content, owner) {
  * 4. Otherwise, insert at the beginning of the file.
  */
 function findBadgePosition(content) {
-    // Lines inside code are examples and never place the badge
-    const code = codeRanges(content);
+    // Lines inside code or other HTML blocks never place the badge
+    const code = findCode(content);
     // Check for existing markers
-    const markerIndex = indexOutsideCode(content, MARKER_START, code);
+    const markerIndex = indexOutsideCode(content, MARKER_START, code.examples);
     if (markerIndex !== -1) {
         return markerIndex;
     }
@@ -30670,7 +30718,7 @@ function findBadgePosition(content) {
     for (const rawLine of content.split('\n')) {
         const lineEnd = offset + rawLine.length;
         const line = rawLine.trim();
-        if (!inCode(offset, code)) {
+        if (!inCode(offset, code.all)) {
             // Track badge lines: [![...](...)](...) pattern
             if (line.startsWith('[![') && line.includes('](')) {
                 lastBadgeLineEnd = lineEnd;
@@ -30697,17 +30745,18 @@ function findBadgePosition(content) {
  * Insert or replace the trust badge in README content.
  * The operation is idempotent: running it twice produces the same result.
  *
- * Markers and badges inside code (fenced and indented code blocks, <pre>) are left alone. When an
- * owner is given, an unmarked badge is replaced only if its image names the owner's package or
- * agent id; a badge for another package stays as it is.
+ * Markers and badges inside code (fenced and indented code blocks, <pre>) are left alone, and so
+ * are badges inside the other HTML blocks (comments, <div> and the like). When an owner is given,
+ * an unmarked badge is replaced only if its image names the owner's package or agent id; a badge
+ * for another package stays as it is.
  */
 function updateBadge(content, badgeMarkdown, owner) {
-    const code = codeRanges(content);
+    const code = findCode(content);
     const wrapped = wrapWithMarkers(badgeMarkdown);
     // Case 1: Markers exist -- replace content between them
-    const markerStartIndex = indexOutsideCode(content, MARKER_START, code);
+    const markerStartIndex = indexOutsideCode(content, MARKER_START, code.examples);
     if (markerStartIndex !== -1) {
-        const markerEndIndex = indexOutsideCode(content, MARKER_END, code, markerStartIndex + MARKER_START.length);
+        const markerEndIndex = indexOutsideCode(content, MARKER_END, code.examples, markerStartIndex + MARKER_START.length);
         if (markerEndIndex !== -1) {
             // Both markers present: replace everything between them, keeping markers that share a
             // line on that line
@@ -30730,7 +30779,7 @@ function updateBadge(content, badgeMarkdown, owner) {
     }
     // Case 2: Badge URL exists without markers -- replace the badge, on its own line or inline
     // among the other text of its line
-    const badge = findUnmarkedBadge(content, code, owner);
+    const badge = findUnmarkedBadge(content, code.all, owner);
     if (badge) {
         const before = content.substring(0, badge.index);
         const after = content.substring(badge.index + badge.text.length);
@@ -30781,8 +30830,8 @@ function encodeUrlComponent(value) {
 function trustQuery(packageName, source) {
     return `package=${encodeUrlComponent(packageName)}&source=${encodeUrlComponent(source)}`;
 }
-// A failure that a later attempt can succeed past: no response (network error or timeout), a rate
-// limit, or a server error.
+// A failure that a later attempt can succeed past: no response or only part of one (network error
+// or timeout), a rate limit, or a server error.
 class TransientLookupError extends Error {
 }
 function sleep(ms) {
@@ -30791,8 +30840,9 @@ function sleep(ms) {
 /**
  * Look up trust information for a package from the OpenA2A Registry.
  * Returns null if the package has no trust profile (404).
- * A network error, a timeout, a 429 or a 5xx is retried with backoff; the lookup throws when the
- * last attempt fails the same way, and at once on any other unexpected status code.
+ * A network error or a timeout (while the body is read as well), a 429 or a 5xx is retried with
+ * backoff; the lookup throws when the last attempt fails the same way, and at once on any other
+ * unexpected status code.
  */
 async function lookupTrust(registryUrl, packageName, source, options = {}) {
     const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
@@ -30837,8 +30887,15 @@ async function lookupOnce(url, registryUrl, timeoutMs) {
     try {
         return (await response.json());
     }
-    catch {
-        throw new Error(`Registry at ${registryUrl} returned status ${response.status} with a body that is not JSON.`);
+    catch (error) {
+        // A body that is not JSON fails to parse with a SyntaxError, matched by name since the fetch
+        // implementation can throw it from another realm. Anything else (a timeout or a dropped
+        // connection while the body arrives) means the answer never arrived in full.
+        if (error?.name === 'SyntaxError') {
+            throw new Error(`Registry at ${registryUrl} returned status ${response.status} with a body that is not JSON.`);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        throw new TransientLookupError(`Failed to read the answer from registry at ${registryUrl}: ${message}`);
     }
 }
 

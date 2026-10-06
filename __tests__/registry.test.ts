@@ -1,3 +1,5 @@
+import * as http from 'http';
+import { AddressInfo } from 'net';
 import { lookupTrust, TrustLookupResponse, trustQuery } from '../src/registry';
 
 // Save original fetch
@@ -130,6 +132,35 @@ describe('lookupTrust', () => {
       const result = await lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 0 });
       expect(result).toEqual(found);
       expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries a lookup whose body timed out and returns the next answer', async () => {
+      const stalled = { ok: true, status: 200, json: () => Promise.reject(timeout) };
+      global.fetch = jest.fn().mockResolvedValueOnce(stalled).mockResolvedValueOnce(ok);
+
+      const result = await lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm', { retryDelayMs: 0 });
+      expect(result).toEqual(found);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports a body that stops arriving as a failed read, not as a body that is not JSON', async () => {
+      let requests = 0;
+      const server = http.createServer((_request, response) => {
+        requests++;
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.write('{"agentId":');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const registryUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      try {
+        await expect(
+          lookupTrust(registryUrl, 'hackmyagent', 'npm', { attempts: 2, retryDelayMs: 0, timeoutMs: 1000 })
+        ).rejects.toThrow(`Failed to read the answer from registry at ${registryUrl}: `);
+        expect(requests).toBe(2);
+      } finally {
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
     });
 
     it.each([429, 500, 502, 503])('retries a %s and returns the next answer', async (status) => {

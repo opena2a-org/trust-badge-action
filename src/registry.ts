@@ -41,8 +41,8 @@ export function trustQuery(packageName: string, source: string): string {
   return `package=${encodeUrlComponent(packageName)}&source=${encodeUrlComponent(source)}`;
 }
 
-// A failure that a later attempt can succeed past: no response (network error or timeout), a rate
-// limit, or a server error.
+// A failure that a later attempt can succeed past: no response or only part of one (network error
+// or timeout), a rate limit, or a server error.
 class TransientLookupError extends Error {}
 
 function sleep(ms: number): Promise<void> {
@@ -52,8 +52,9 @@ function sleep(ms: number): Promise<void> {
 /**
  * Look up trust information for a package from the OpenA2A Registry.
  * Returns null if the package has no trust profile (404).
- * A network error, a timeout, a 429 or a 5xx is retried with backoff; the lookup throws when the
- * last attempt fails the same way, and at once on any other unexpected status code.
+ * A network error or a timeout (while the body is read as well), a 429 or a 5xx is retried with
+ * backoff; the lookup throws when the last attempt fails the same way, and at once on any other
+ * unexpected status code.
  */
 export async function lookupTrust(
   registryUrl: string,
@@ -109,9 +110,18 @@ async function lookupOnce(
 
   try {
     return (await response.json()) as TrustLookupResponse;
-  } catch {
-    throw new Error(
-      `Registry at ${registryUrl} returned status ${response.status} with a body that is not JSON.`
+  } catch (error) {
+    // A body that is not JSON fails to parse with a SyntaxError, matched by name since the fetch
+    // implementation can throw it from another realm. Anything else (a timeout or a dropped
+    // connection while the body arrives) means the answer never arrived in full.
+    if ((error as { name?: unknown } | null)?.name === 'SyntaxError') {
+      throw new Error(
+        `Registry at ${registryUrl} returned status ${response.status} with a body that is not JSON.`
+      );
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new TransientLookupError(
+      `Failed to read the answer from registry at ${registryUrl}: ${message}`
     );
   }
 }
