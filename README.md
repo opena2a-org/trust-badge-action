@@ -1,8 +1,11 @@
-> **[OpenA2A](https://github.com/opena2a-org/opena2a)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/AI-BrowserGuard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+# OpenA2A Trust Badge
 
-# OpenA2A Trust Badge Action
+[![Status: stable](https://img.shields.io/badge/status-stable-green)](STATUS.md)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[![Status: stable](https://img.shields.io/badge/status-stable-green)](./STATUS.md)
+> **[OpenA2A](https://github.com/opena2a-org)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/ai-browserguard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
+
+[Website](https://opena2a.org) · [Discord](https://discord.gg/uRZa3KXgEn)
 
 A GitHub Action that adds and auto-updates an OpenA2A Registry trust score badge in your README.
 
