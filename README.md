@@ -38,9 +38,9 @@ For a package with a trust profile, the step writes a badge like this into your 
 [![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/<agent-id>/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>)
 ```
 
-`<agent-id>` is the id the registry lookup returns for your package.
+`<agent-id>` is the id the registry lookup returns for your package. When the lookup returns no agent id in UUID form, the image for a package name without `/` names the package instead: `https://api.oa2a.org/v1/trust/badge/<package-name>?source=<package-source>`.
 
-The action auto-detects your package name from `package.json`, `pyproject.toml`, or `setup.py`. Override with:
+The action reads the package name from the first of `package.json`, `pyproject.toml`, `setup.py` and `setup.cfg` that names one. The lookup source stays `npm` whatever file the name came from, so a package on PyPI or GitHub sets `package-source`. Override either with:
 
 ```yaml
       - uses: opena2a-org/trust-badge-action@v1
