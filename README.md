@@ -59,7 +59,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 | `registry-url` | OpenA2A Registry API URL | `https://api.oa2a.org` |
 | `create-pr` | Create a PR instead of committing directly | `false` |
 | `auto-merge` | Auto-merge the PR (only when `create-pr: true`) | `true` |
-| `github-token` | GitHub token for commits/PRs, used when the `GITHUB_TOKEN` environment variable is not set; without either, the README is updated in the workspace only | |
+| `github-token` | GitHub token for commits/PRs if the `GITHUB_TOKEN` environment variable is unset; without either, the README is updated in the workspace only | |
 
 ## Outputs
 
@@ -75,9 +75,11 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 
 A package with no trust profile does not fail the run: the README is left as it is and `updated` is `false`. The run fails, with the README unchanged and no outputs set, when:
 
-- The registry does not answer. A lookup with no answer or only part of one, a 429 or a 5xx is tried 3 times, each attempt allowed 15 seconds, with pauses of 2 and then 4 seconds: against a registry that does not answer, the run fails after about 51 seconds.
+- The registry gives no answer, a partial answer, a 429 or a 5xx on each of 3 tries.
 - The registry answers with another unexpected status, or with a body that is not JSON.
-- The package name contains `/` (a scoped npm name or an `owner/repo` name) and the lookup returns no agent id in UUID form. The registry serves no badge image by name for such a package, so there is no badge to write.
+- The package name contains `/` (a scoped npm or `owner/repo` name) and the lookup returns no agent id in UUID form.
+
+[Failed runs](docs/failed-runs.md) gives the retry timing and why a package name with `/` gets no badge.
 
 ## Badge Placement
 
