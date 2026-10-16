@@ -9,12 +9,6 @@
 
 A GitHub Action that adds and auto-updates an OpenA2A Registry trust score badge in your README.
 
-```
-[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/<agent-id>/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>)
-```
-
-`<agent-id>` is the id the registry lookup returns for your package.
-
 ## Usage
 
 Add `.github/workflows/trust-badge.yml` to your repository:
@@ -25,7 +19,6 @@ on:
   schedule:
     - cron: '0 0 * * 1'    # Weekly on Monday
   workflow_dispatch:         # Manual trigger
-
 permissions:
   contents: write
 
@@ -38,6 +31,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+For a package with a trust profile, the step writes a badge like this into your README:
+
+```
+[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/<agent-id>/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>)
+```
+
+`<agent-id>` is the id the registry lookup returns for your package.
 
 The action auto-detects your package name from `package.json`, `pyproject.toml`, or `setup.py`. Override with:
 
