@@ -11,6 +11,7 @@ The `v1` tag points to the same commit as the `v1.1.0` release, `216064e`. Behav
 | A `github-token` input | No `github-token` input |
 | A lookup with no answer, a partial answer, a 429 or a 5xx is tried 3 times, with pauses of 2 and 4 seconds | A single attempt with a 15 second timeout |
 | A package name with `/` whose lookup returns no agent id in UUID form fails the run | No such check: the badge is written from the agent id the lookup returns |
+| An existing OpenA2A badge is replaced only when it is for the same package, on the line it is on; badges for other packages, and badge text in a code block, an HTML comment or an HTML block, are left as they are | Code blocks and HTML blocks are read like any other text; the first OpenA2A badge whose image is on `registry.opena2a.org` is replaced wherever it is and whatever package it is for, and when it shares its line with other text the markers split that line, the badge on a line of its own; a badge whose image is on another host, `api.oa2a.org` included, is not seen, and a second badge is added |
 
 To run the behaviour the README documents before then, pin a commit of `main` instead of the tag:
 
@@ -18,4 +19,4 @@ To run the behaviour the README documents before then, pin a commit of `main` in
       - uses: opena2a-org/trust-badge-action@<commit-sha>
 ```
 
-Each row can be checked against the tag with `git show v1:src/index.ts`, `git show v1:action.yml` and `git show v1:src/registry.ts`.
+Each row can be checked against the tag with `git show v1:src/index.ts`, `git show v1:action.yml`, `git show v1:src/registry.ts` and `git show v1:src/readme.ts`.
