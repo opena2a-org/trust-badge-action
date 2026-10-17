@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { resolveBadge } from '../src/badge';
+import { badgeMarkdown, resolveBadge } from '../src/badge';
 import { detectPackageName } from '../src/detect';
+import { updateBadge } from '../src/readme';
 import { TrustLookupResponse } from '../src/registry';
 
 function readme(): string {
@@ -98,6 +99,36 @@ describe('README.md', () => {
     expect(page).toContain(`\`${REGISTRY}/v1/trust/lookup?package=<package-name>&source=<package-source>\``);
     expect(badge.imageUrl).toBe(`${REGISTRY}/v1/trust/badge/my-agent?source=npm`);
     expect(page).toContain('`<registry-url>/v1/trust/badge/<package-name>?source=<package-source>`');
+  });
+
+  it('says in the v1 tag page which badges the action leaves alone and where it replaces one', () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const row = page.split('\n').find((line) => line.startsWith('| An existing OpenA2A badge'));
+    expect(row).toBeDefined();
+    const readmeColumn = (row as string).split('|')[1];
+    expect(readmeColumn).toContain('same package');
+    expect(readmeColumn).toContain('in a code block, an HTML comment or an HTML block');
+
+    const ownerId = '00000000-0000-0000-0000-000000000000';
+    const otherId = '00000000-0000-0000-0000-000000000001';
+    const badge = (agentId: string) =>
+      `[![OpenA2A Trust Score](${REGISTRY}/v1/trust/${agentId}/badge.svg)](${REGISTRY}/agents/${agentId})`;
+    const written = badgeMarkdown(resolveBadge(REGISTRY, 'my-agent', 'npm', lookup(ownerId)));
+    const owner = { packageName: 'my-agent', agentId: ownerId };
+
+    // Another package's badge stays, and the badge for this package is added after it
+    expect(updateBadge(`# My Agent\n\n${badge(otherId)}\n`, written, owner)).toContain(
+      `${badge(otherId)}\n<!-- opena2a-trust-badge -->\n${written}\n<!-- /opena2a-trust-badge -->`
+    );
+
+    // A badge in a code block stays as it is
+    const fenced = `\`\`\`markdown\n${badge(ownerId)}\n\`\`\``;
+    expect(updateBadge(`# My Agent\n\n${fenced}\n`, written, owner)).toContain(fenced);
+
+    // The package's own badge is replaced on the line it is on
+    expect(updateBadge(`# My Agent\n\nStatus: ${badge(ownerId)} and more\n`, written, owner)).toContain(
+      `Status: <!-- opena2a-trust-badge -->${written}<!-- /opena2a-trust-badge --> and more`
+    );
   });
 
   it('lists each input of action.yml with the default action.yml gives it', () => {
