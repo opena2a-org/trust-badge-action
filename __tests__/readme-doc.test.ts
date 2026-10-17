@@ -131,6 +131,27 @@ describe('README.md', () => {
     );
   });
 
+  it('says in the v1 tag page that a single-quoted pyproject.toml name is read', () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const row = page
+      .split('\n')
+      .find((line) => line.startsWith('| A `pyproject.toml` name written as a single-quoted TOML string'));
+    expect(row).toBeDefined();
+    const readmeColumn = (row as string).split('|')[1];
+    expect(readmeColumn).toContain("`name = 'my-pkg'`");
+    expect(readmeColumn).toContain('`name = "my-pkg"`');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readme-doc-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'pyproject.toml'), "[project]\nname = 'my-pkg'\n");
+      expect(detectPackageName(dir)).toBe('my-pkg');
+      fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[project]\nname = "my-pkg"\n');
+      expect(detectPackageName(dir)).toBe('my-pkg');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('lists each input of action.yml with the default action.yml gives it', () => {
     const inputs = inputDefaults();
     expect(inputs.length).toBeGreaterThan(0);
