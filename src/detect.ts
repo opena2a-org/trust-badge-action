@@ -29,10 +29,9 @@ export function detectPackageName(dir?: string): string | null {
   if (fs.existsSync(pyprojectPath)) {
     try {
       const content = fs.readFileSync(pyprojectPath, 'utf-8');
-      // TOML basic ("...") and literal ('...') strings
-      const nameMatch = content.match(/^\s*name\s*=\s*(?:"([^"]+)"|'([^']+)')/m);
-      if (nameMatch) {
-        return nameMatch[1] ?? nameMatch[2];
+      const name = pyprojectTableName(content, 'project') ?? pyprojectTableName(content, 'tool.poetry');
+      if (name) {
+        return name;
       }
     } catch {
       // Malformed pyproject.toml -- skip
@@ -67,5 +66,38 @@ export function detectPackageName(dir?: string): string | null {
     }
   }
 
+  return null;
+}
+
+/**
+ * Read the `name` key of one table of a pyproject.toml, such as `project` or `tool.poetry`.
+ * A `name` key in any other table, or before the first table header, is ignored.
+ *
+ * @param content - The pyproject.toml text
+ * @param table - The dotted table name to read
+ * @returns The name, or null when that table has no quoted `name` key.
+ */
+function pyprojectTableName(content: string, table: string): string | null {
+  let inTable = false;
+  for (const line of content.split(/\r?\n/)) {
+    // A table header, [table] or [[array.of.tables]], with an optional trailing comment
+    const header = line.match(/^\s*\[(\[?)([^\[\]]+)\]\1\s*(?:#.*)?$/);
+    if (header) {
+      const headerName = header[2]
+        .split('.')
+        .map((part) => part.trim().replace(/^"(.*)"$|^'(.*)'$/, '$1$2'))
+        .join('.');
+      inTable = header[1] === '' && headerName === table;
+      continue;
+    }
+    if (!inTable) {
+      continue;
+    }
+    // TOML basic ("...") and literal ('...') strings
+    const nameMatch = line.match(/^\s*name\s*=\s*(?:"([^"]+)"|'([^']+)')/);
+    if (nameMatch) {
+      return nameMatch[1] ?? nameMatch[2];
+    }
+  }
   return null;
 }
