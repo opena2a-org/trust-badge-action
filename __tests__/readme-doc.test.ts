@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as core from '@actions/core';
 import { badgeMarkdown, resolveBadge } from '../src/badge';
 import { detectPackageName } from '../src/detect';
-import { updateBadge } from '../src/readme';
+import { hasTrustBadge, updateBadge } from '../src/readme';
 import { TrustLookupResponse } from '../src/registry';
 
 function readme(): string {
@@ -77,6 +77,27 @@ describe('README.md', () => {
       .replace('package=my-agent', 'package=<package-name>')
       .replace('source=npm', 'source=<package-source>');
     expect(readme()).toContain(`[![OpenA2A Trust Score](${imageUrl})](${linkUrl})`);
+  });
+
+  it('renders a badge built from an agent id above the badge example, and shows the example only as code', () => {
+    const content = readme();
+    const example = `[![OpenA2A Trust Score](${REGISTRY}/v1/trust/<agent-id>/badge.svg)](${REGISTRY}/v1/trust/lookup?package=<package-name>&source=<package-source>)`;
+    const placeholders = { packageName: '<package-name>', agentId: '<agent-id>' };
+
+    // Outside a code block the example is a badge for the literal agent id <agent-id>
+    expect(hasTrustBadge(example, placeholders)).toBe(true);
+    expect(hasTrustBadge(content, placeholders)).toBe(false);
+
+    // Above it, outside any code block, is the badge the action writes from an agent id
+    const live =
+      /\[!\[OpenA2A Trust Score\]\(https:\/\/api\.oa2a\.org\/v1\/trust\/([0-9a-f-]{36})\/badge\.svg\)\]\(https:\/\/api\.oa2a\.org\/v1\/trust\/lookup\?package=([^&()]+)&source=([^&()]+)\)/.exec(
+        content
+      );
+    expect(live).not.toBeNull();
+    const [text, agentId, packageName, source] = live as RegExpExecArray;
+    expect(badgeMarkdown(resolveBadge(REGISTRY, packageName, source, lookup(agentId)))).toBe(text);
+    expect(hasTrustBadge(content, { packageName, agentId })).toBe(true);
+    expect(content.indexOf(example)).toBeGreaterThan((live as RegExpExecArray).index);
   });
 
   it('shows the image that names the package when the lookup returns no agent id', () => {

@@ -34,7 +34,9 @@ jobs:
 
 The `v1` tag is the `v1.1.0` release and does not yet have some of the behaviour below; [the v1 tag](docs/v1-tag.md) lists each difference and how to pin a commit that has it.
 
-For a package with a trust profile, the step writes a badge like this into your README:
+For a package with a trust profile, the step writes a badge into your README. Below are the badge it writes for `opena2a-cli` on npm and the markdown for your package's badge:
+
+[![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/c34d581b-0a55-4eeb-aa1c-37dfaa0c90a8/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=opena2a-cli&source=npm)
 
 ```
 [![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/<agent-id>/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>)
