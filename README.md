@@ -32,6 +32,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+The `v1` tag is the `v1.1.0` release and does not yet have some of the behaviour below; [the v1 tag](docs/v1-tag.md) lists each difference and how to pin a commit that has it.
+
 For a package with a trust profile, the step writes a badge like this into your README:
 
 ```

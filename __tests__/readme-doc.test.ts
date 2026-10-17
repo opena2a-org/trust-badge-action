@@ -86,6 +86,20 @@ describe('README.md', () => {
     expect(readme()).toContain(`\`${imageUrl}\``);
   });
 
+  it('links the page that lists the documented behaviour the v1 tag does not have', () => {
+    expect(readme()).toMatch(/uses: +opena2a-org\/trust-badge-action@v1\n/);
+    expect(readme()).toContain('](docs/v1-tag.md)');
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const badge = resolveBadge(REGISTRY, 'my-agent', 'npm', lookup(''));
+    const registryDefault = inputDefaults().find(([name]) => name === 'registry-url')?.[1];
+    expect(registryDefault).toBe(REGISTRY);
+    expect(page).toContain(`\`${registryDefault}\``);
+    expect(page).toContain('`github-token`');
+    expect(page).toContain(`\`${REGISTRY}/v1/trust/lookup?package=<package-name>&source=<package-source>\``);
+    expect(badge.imageUrl).toBe(`${REGISTRY}/v1/trust/badge/my-agent?source=npm`);
+    expect(page).toContain('`<registry-url>/v1/trust/badge/<package-name>?source=<package-source>`');
+  });
+
   it('lists each input of action.yml with the default action.yml gives it', () => {
     const inputs = inputDefaults();
     expect(inputs.length).toBeGreaterThan(0);
