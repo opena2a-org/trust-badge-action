@@ -51,6 +51,52 @@ describe('detectPackageName', () => {
     expect(detectPackageName(tmpDir)).toBe('my-pkg');
   });
 
+  it('reads the [project] name, not the name of a table before it', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'pyproject.toml'),
+      "[[tool.uv.index]]\nname = 'pytorch'\nurl = 'https://download.pytorch.org/whl/cpu'\n\n" +
+        '[tool.commitizen]\nname = "cz_conventional_commits"\n\n[project]\nname = "my-pkg"\n'
+    );
+    expect(detectPackageName(tmpDir)).toBe('my-pkg');
+  });
+
+  it('ignores a name key in a table after [project] and in a [project] subtable', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'pyproject.toml'),
+      '[project.urls]\nname = "not-this"\n\n[project]\nversion = "0.1.0"\n\n[tool.commitizen]\nname = "cz"\n'
+    );
+    expect(detectPackageName(tmpDir)).toBeNull();
+  });
+
+  it('ignores a name key before the first table header', () => {
+    fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), 'name = "root-name"\n\n[project]\nversion = "1"\n');
+    expect(detectPackageName(tmpDir)).toBeNull();
+  });
+
+  it('reads a [project] header with spaces, a trailing comment and CRLF line endings', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'pyproject.toml'),
+      '[tool.uv]\r\nname = "other"\r\n[ project ]  # metadata\r\nname = "my-pkg"\r\n'
+    );
+    expect(detectPackageName(tmpDir)).toBe('my-pkg');
+  });
+
+  it('reads the [tool.poetry] name of a Poetry project with no [project] table', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'pyproject.toml'),
+      '[[tool.poetry.source]]\nname = "private"\n\n[tool.poetry]\nname = "poetry-pkg"\n'
+    );
+    expect(detectPackageName(tmpDir)).toBe('poetry-pkg');
+  });
+
+  it('prefers the [project] name over the [tool.poetry] name', () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'pyproject.toml'),
+      '[tool.poetry]\nname = "poetry-pkg"\n\n[project]\nname = "pep621-pkg"\n'
+    );
+    expect(detectPackageName(tmpDir)).toBe('pep621-pkg');
+  });
+
   it('returns null when no detection files exist', () => {
     expect(detectPackageName(tmpDir)).toBeNull();
   });
