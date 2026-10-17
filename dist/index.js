@@ -30221,16 +30221,20 @@ async function run() {
         }
         fs.writeFileSync(resolvedReadmePath, updatedContent, 'utf-8');
         core.info('README updated with trust badge.');
-        // Step 5: Commit and optionally create PR
+        // Step 5: Commit to the branch the run is for, or open a PR into it
         const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
-        if (token && createPr) {
-            await createPullRequest(token, readmePath, trustData, badge, autoMerge);
+        const branch = runBranch();
+        if (!token) {
+            core.info('No GITHUB_TOKEN available. README updated locally but not committed.');
         }
-        else if (token) {
-            await commitDirectly(token, readmePath, updatedContent);
+        else if (!branch) {
+            core.warning(`The run is for ${github.context.ref || 'no ref'}, which is not a branch, so the README was updated locally but not committed.`);
+        }
+        else if (createPr) {
+            await createPullRequest(token, readmePath, trustData, badge, autoMerge, branch);
         }
         else {
-            core.info('No GITHUB_TOKEN available. README updated locally but not committed.');
+            await commitDirectly(token, readmePath, updatedContent, branch);
         }
         // Step 6: Set outputs
         core.setOutput('updated', 'true');
@@ -30249,20 +30253,24 @@ function setTrustOutputs(trustData, badge) {
     core.setOutput('badge-url', badge.imageUrl);
     core.setOutput('profile-url', badge.linkUrl);
 }
-async function createPullRequest(token, readmePath, trustData, badge, autoMerge) {
+// The branch the run is for. A run for a tag or a pull request merge ref has none, so there is no
+// branch to write its README to.
+function runBranch() {
+    const ref = github.context.ref || '';
+    return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : undefined;
+}
+// Opens a PR into the run's branch from a PR branch that starts at the commit the run checked out,
+// the commit whose README the badge was added to.
+async function createPullRequest(token, readmePath, trustData, badge, autoMerge, baseBranch) {
     const octokit = github.getOctokit(token);
     const { owner, repo } = github.context.repo;
-    const branchName = 'opena2a/update-trust-badge';
     try {
-        // Get the default branch ref
+        // A run on another branch gets a PR branch of its own and does not reset the default branch's.
         const { data: repoData } = await octokit.rest.repos.get({ owner, repo });
-        const defaultBranch = repoData.default_branch;
-        const { data: refData } = await octokit.rest.git.getRef({
-            owner,
-            repo,
-            ref: `heads/${defaultBranch}`,
-        });
-        const baseSha = refData.object.sha;
+        const branchName = baseBranch === repoData.default_branch
+            ? 'opena2a/update-trust-badge'
+            : `opena2a/update-trust-badge-${baseBranch}`;
+        const baseSha = github.context.sha;
         // Create or update the branch
         try {
             await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branchName}` });
@@ -30312,11 +30320,12 @@ async function createPullRequest(token, readmePath, trustData, badge, autoMerge)
             branch: branchName,
             sha: fileSha,
         });
-        // Check for existing PR
+        // Check for an existing PR into the same branch
         const { data: existingPrs } = await octokit.rest.pulls.list({
             owner,
             repo,
             head: `${owner}:${branchName}`,
+            base: baseBranch,
             state: 'open',
         });
         if (existingPrs.length > 0) {
@@ -30333,7 +30342,7 @@ async function createPullRequest(token, readmePath, trustData, badge, autoMerge)
             repo,
             title: 'Update OpenA2A trust badge',
             head: branchName,
-            base: defaultBranch,
+            base: baseBranch,
             body: [
                 '## OpenA2A Trust Badge Update',
                 '',
@@ -30351,7 +30360,7 @@ async function createPullRequest(token, readmePath, trustData, badge, autoMerge)
                 '*Automated PR -- merge to display your trust score in the README.*',
             ].join('\n'),
         });
-        core.info(`Pull request created: ${pr.html_url}`);
+        core.info(`Pull request into ${baseBranch} created: ${pr.html_url}`);
         if (autoMerge) {
             await tryAutoMerge(octokit, owner, repo, pr.number, pr.html_url);
         }
@@ -30401,24 +30410,26 @@ async function tryAutoMerge(octokit, owner, repo, prNumber, prUrl) {
         }
     }
 }
-async function commitDirectly(token, readmePath, content) {
+async function commitDirectly(token, readmePath, content, branch) {
     const octokit = github.getOctokit(token);
     const { owner, repo } = github.context.repo;
     try {
-        // Get current file SHA
+        // The README's sha in the commit the run checked out, the README the badge was added to,
+        // rather than the sha of the branch's README at the time of the write
         let fileSha;
         try {
             const { data: fileData } = await octokit.rest.repos.getContent({
                 owner,
                 repo,
                 path: readmePath,
+                ref: github.context.sha,
             });
             if (!Array.isArray(fileData) && fileData.type === 'file') {
                 fileSha = fileData.sha;
             }
         }
         catch {
-            // File may not exist
+            // File may not exist in that commit
         }
         await octokit.rest.repos.createOrUpdateFileContents({
             owner,
@@ -30426,9 +30437,10 @@ async function commitDirectly(token, readmePath, content) {
             path: readmePath,
             message: 'Update OpenA2A trust badge',
             content: Buffer.from(content).toString('base64'),
+            branch,
             sha: fileSha,
         });
-        core.info('Changes committed directly to the current branch.');
+        core.info(`Changes committed directly to branch ${branch}.`);
     }
     catch (error) {
         const message = error instanceof Error ? error.message : String(error);

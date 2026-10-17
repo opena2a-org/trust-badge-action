@@ -45,8 +45,16 @@ const mockOctokit = {
 
 jest.mock('@actions/github', () => ({
   getOctokit: jest.fn(() => mockOctokit),
-  context: { repo: { owner: 'test-owner', repo: 'test-repo' } },
+  context: { repo: { owner: 'test-owner', repo: 'test-repo' }, ref: '', sha: '' },
 }));
+
+// The commit the run checked out, and the sha of the README in it.
+const RUN_SHA = 'run-commit-sha';
+const README_SHA_AT_RUN = 'readme-blob-sha-at-run';
+
+function runOn(ref: string): void {
+  Object.assign(github.context, { ref, sha: RUN_SHA });
+}
 
 const AGENT_ID = 'e3b58711-0f97-441c-8a83-4b1b5342a39f';
 const IMAGE_URL = `https://api.oa2a.org/v1/trust/${AGENT_ID}/badge.svg`;
@@ -92,6 +100,7 @@ beforeEach(() => {
   mockInputs['package-name'] = 'hackmyagent';
   mockInputs['package-source'] = 'npm';
   mockLookup(lookup);
+  runOn('refs/heads/main');
 
   mockOctokit.rest.repos.get.mockResolvedValue({ data: { default_branch: 'main' } });
   mockOctokit.rest.git.getRef.mockImplementation(async ({ ref }: { ref: string }) => {
@@ -218,22 +227,91 @@ describe('run', () => {
     expect(mockOutputs).toEqual({ updated: 'false' });
   });
 
-  it('commits the README directly when create-pr is not set', async () => {
-    mockInputs['github-token'] = 'test-token';
-    writeReadme('# My Project\n');
-
-    await run();
-
-    expect(github.getOctokit).toHaveBeenCalledWith('test-token');
-    expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith({
-      owner: 'test-owner',
-      repo: 'test-repo',
-      path: readmePath,
-      message: 'Update OpenA2A trust badge',
-      content: Buffer.from(`# My Project\n${WRAPPED}\n`).toString('base64'),
-      sha: undefined,
+  describe('without create-pr', () => {
+    beforeEach(() => {
+      mockInputs['github-token'] = 'test-token';
+      writeReadme('# My Project\n');
+      // The README in the commit the run checked out, and a newer one on the default branch.
+      mockOctokit.rest.repos.getContent.mockImplementation(async ({ ref }: { ref?: string }) => ({
+        data: { type: 'file', sha: ref === RUN_SHA ? README_SHA_AT_RUN : 'readme-blob-sha-on-default-branch-now' },
+      }));
     });
-    expect(mockOctokit.rest.pulls.create).not.toHaveBeenCalled();
+
+    it('commits the README to the branch the run is for, in place of the README of the commit it checked out', async () => {
+      await run();
+
+      expect(github.getOctokit).toHaveBeenCalledWith('test-token');
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: readmePath,
+        ref: RUN_SHA,
+      });
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        path: readmePath,
+        message: 'Update OpenA2A trust badge',
+        content: Buffer.from(`# My Project\n${WRAPPED}\n`).toString('base64'),
+        branch: 'main',
+        sha: README_SHA_AT_RUN,
+      });
+      expect(core.info).toHaveBeenCalledWith('Changes committed directly to branch main.');
+      expect(mockOctokit.rest.pulls.create).not.toHaveBeenCalled();
+    });
+
+    it('commits a run on another branch to that branch, not to the default branch', async () => {
+      runOn('refs/heads/feature/docs');
+
+      await run();
+
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledTimes(1);
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({ branch: 'feature/docs', sha: README_SHA_AT_RUN })
+      );
+      expect(core.info).toHaveBeenCalledWith('Changes committed directly to branch feature/docs.');
+    });
+
+    it('sends no sha when the commit the run checked out has no README', async () => {
+      mockOctokit.rest.repos.getContent.mockRejectedValue(new Error('Not Found'));
+
+      await run();
+
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({ branch: 'main', sha: undefined })
+      );
+    });
+
+    it('warns and keeps the README updated locally when GitHub refuses the write', async () => {
+      mockOctokit.rest.repos.createOrUpdateFileContents.mockRejectedValue(
+        new Error(`README.md does not match ${README_SHA_AT_RUN}`)
+      );
+
+      await run();
+
+      expect(core.warning).toHaveBeenCalledWith(
+        `Failed to commit directly: README.md does not match ${README_SHA_AT_RUN}. README was updated locally.`
+      );
+      expect(core.info).not.toHaveBeenCalledWith(expect.stringContaining('Changes committed directly'));
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+      expect(core.setFailed).not.toHaveBeenCalled();
+    });
+
+    it.each(['refs/pull/7/merge', 'refs/tags/v2.0.0'])(
+      'commits nothing for a run on %s, which is not a branch',
+      async (ref) => {
+        runOn(ref);
+
+        await run();
+
+        expect(github.getOctokit).not.toHaveBeenCalled();
+        expect(core.warning).toHaveBeenCalledWith(
+          `The run is for ${ref}, which is not a branch, so the README was updated locally but not committed.`
+        );
+        expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+        expect(mockOutputs.updated).toBe('true');
+      }
+    );
   });
 
   describe('with create-pr', () => {
@@ -250,13 +328,23 @@ describe('run', () => {
         owner: 'test-owner',
         repo: 'test-repo',
         ref: 'refs/heads/opena2a/update-trust-badge',
-        sha: 'base-sha',
+        sha: RUN_SHA,
       });
       expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
         expect.objectContaining({
           branch: 'opena2a/update-trust-badge',
           content: Buffer.from(`# My Project\n${WRAPPED}\n`).toString('base64'),
         })
+      );
+      expect(mockOctokit.rest.pulls.list).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        head: 'test-owner:opena2a/update-trust-badge',
+        base: 'main',
+        state: 'open',
+      });
+      expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(
+        expect.objectContaining({ head: 'opena2a/update-trust-badge', base: 'main' })
       );
       const { body } = mockOctokit.rest.pulls.create.mock.calls[0][0];
       expect(body).toContain('| Trust Score | 0.21666666666666667 |');
@@ -298,6 +386,58 @@ describe('run', () => {
       );
       expect(core.setFailed).not.toHaveBeenCalled();
       expect(mockOutputs.updated).toBe('true');
+    });
+
+    it('opens the pull request for a run on another branch into that branch, from a badge branch of its own', async () => {
+      runOn('refs/heads/feature/docs');
+
+      await run();
+
+      expect(mockOctokit.rest.git.createRef).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        ref: 'refs/heads/opena2a/update-trust-badge-feature/docs',
+        sha: RUN_SHA,
+      });
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledTimes(1);
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({ branch: 'opena2a/update-trust-badge-feature/docs' })
+      );
+      expect(mockOctokit.rest.pulls.list).toHaveBeenCalledWith(
+        expect.objectContaining({ head: 'test-owner:opena2a/update-trust-badge-feature/docs', base: 'feature/docs' })
+      );
+      expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(
+        expect.objectContaining({ head: 'opena2a/update-trust-badge-feature/docs', base: 'feature/docs' })
+      );
+      expect(core.info).toHaveBeenCalledWith(
+        'Pull request into feature/docs created: https://github.com/test-owner/test-repo/pull/42'
+      );
+    });
+
+    it('resets an existing badge branch to the commit the run checked out', async () => {
+      mockOctokit.rest.git.getRef.mockResolvedValue({ data: { object: { sha: 'old-badge-sha' } } });
+
+      await run();
+
+      expect(mockOctokit.rest.git.updateRef).toHaveBeenCalledWith({
+        owner: 'test-owner',
+        repo: 'test-repo',
+        ref: 'heads/opena2a/update-trust-badge',
+        sha: RUN_SHA,
+        force: true,
+      });
+      expect(mockOctokit.rest.git.createRef).not.toHaveBeenCalled();
+    });
+
+    it('opens no pull request for a run on a pull request merge ref', async () => {
+      runOn('refs/pull/7/merge');
+
+      await run();
+
+      expect(github.getOctokit).not.toHaveBeenCalled();
+      expect(core.warning).toHaveBeenCalledWith(
+        'The run is for refs/pull/7/merge, which is not a branch, so the README was updated locally but not committed.'
+      );
     });
 
     it('does not merge when auto-merge is false', async () => {
