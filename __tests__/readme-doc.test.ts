@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as core from '@actions/core';
 import { badgeMarkdown, resolveBadge } from '../src/badge';
 import { detectPackageName } from '../src/detect';
 import { updateBadge } from '../src/readme';
@@ -149,6 +150,26 @@ describe('README.md', () => {
       expect(detectPackageName(dir)).toBe('my-pkg');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says in the v1 tag page that a github-token value is read though v1 does not declare the input', () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const row = page.split('\n').find((line) => line.startsWith('| A `github-token` input |'));
+    expect(row).toBeDefined();
+    expect(inputDefaults().map(([name]) => name)).toContain('github-token');
+    const tagColumn = (row as string).split('|')[2];
+    expect(tagColumn).toContain('not declared in `action.yml`');
+    expect(tagColumn).toContain('still read when the `GITHUB_TOKEN` environment variable is unset');
+
+    // getInput, which reads the github-token value, does not look at action.yml: a value for an
+    // input action.yml does not declare is read too
+    expect(inputDefaults().map(([name]) => name)).not.toContain('undeclared-input');
+    process.env['INPUT_UNDECLARED-INPUT'] = 'given-value';
+    try {
+      expect(core.getInput('undeclared-input')).toBe('given-value');
+    } finally {
+      delete process.env['INPUT_UNDECLARED-INPUT'];
     }
   });
 
