@@ -30044,9 +30044,10 @@ function detectPackageName(dir) {
     if (fs.existsSync(pyprojectPath)) {
         try {
             const content = fs.readFileSync(pyprojectPath, 'utf-8');
-            const nameMatch = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+            // TOML basic ("...") and literal ('...') strings
+            const nameMatch = content.match(/^\s*name\s*=\s*(?:"([^"]+)"|'([^']+)')/m);
             if (nameMatch) {
-                return nameMatch[1];
+                return nameMatch[1] ?? nameMatch[2];
             }
         }
         catch {
@@ -30153,7 +30154,7 @@ async function run() {
             core.info(`Detected package name: ${packageName}`);
         }
         if (!packageName) {
-            core.info('Could not detect package name. Provide the package-name input or ensure a package.json/pyproject.toml exists.');
+            core.info('Could not detect package name. Provide the package-name input or ensure package.json, pyproject.toml, setup.py or setup.cfg names the package.');
             core.setOutput('updated', 'false');
             return;
         }
