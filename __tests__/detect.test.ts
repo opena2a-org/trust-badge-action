@@ -46,6 +46,11 @@ describe('detectPackageName', () => {
     expect(detectPackageName(tmpDir)).toBe('my-python-agent');
   });
 
+  it('detects a single-quoted (TOML literal string) name from pyproject.toml', () => {
+    fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), "[project]\nname = 'my-pkg'\n");
+    expect(detectPackageName(tmpDir)).toBe('my-pkg');
+  });
+
   it('returns null when no detection files exist', () => {
     expect(detectPackageName(tmpDir)).toBeNull();
   });

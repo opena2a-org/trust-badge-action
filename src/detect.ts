@@ -29,9 +29,10 @@ export function detectPackageName(dir?: string): string | null {
   if (fs.existsSync(pyprojectPath)) {
     try {
       const content = fs.readFileSync(pyprojectPath, 'utf-8');
-      const nameMatch = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
+      // TOML basic ("...") and literal ('...') strings
+      const nameMatch = content.match(/^\s*name\s*=\s*(?:"([^"]+)"|'([^']+)')/m);
       if (nameMatch) {
-        return nameMatch[1];
+        return nameMatch[1] ?? nameMatch[2];
       }
     } catch {
       // Malformed pyproject.toml -- skip

@@ -27,7 +27,7 @@ export async function run(): Promise<void> {
     }
     if (!packageName) {
       core.info(
-        'Could not detect package name. Provide the package-name input or ensure a package.json/pyproject.toml exists.'
+        'Could not detect package name. Provide the package-name input or ensure package.json, pyproject.toml, setup.py or setup.cfg names the package.'
       );
       core.setOutput('updated', 'false');
       return;

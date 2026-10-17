@@ -137,6 +137,24 @@ describe('run', () => {
     expect(github.getOctokit).not.toHaveBeenCalled();
   });
 
+  it('names every manifest it reads when no package name is found', async () => {
+    writeReadme('# My Project\n');
+    delete mockInputs['package-name'];
+    const cwd = jest.spyOn(process, 'cwd').mockReturnValue(workDir);
+
+    try {
+      await run();
+    } finally {
+      cwd.mockRestore();
+    }
+
+    expect(core.info).toHaveBeenCalledWith(
+      'Could not detect package name. Provide the package-name input or ensure package.json, pyproject.toml, setup.py or setup.cfg names the package.'
+    );
+    expect(mockOutputs).toEqual({ updated: 'false' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('never sets profile-url to the lookup profile host, which has no DNS record', async () => {
     writeReadme('# My Project\n');
 
