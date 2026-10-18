@@ -7,17 +7,33 @@ import { updateBadge } from './readme';
 import { detectPackageName } from './detect';
 import { TrustBadge, badgeMarkdown, resolveBadge } from './badge';
 
+// The version in package.json, bundled into dist/index.js by the build.
+const { version } = require('../package.json') as { version: string };
+
+// The inputs action.yml declares, in its order.
+export const INPUT_NAMES = [
+  'readme-path',
+  'package-name',
+  'package-source',
+  'registry-url',
+  'create-pr',
+  'auto-merge',
+  'github-token',
+];
+
 /**
  * Run the action: look up the package, check that its badge image shows the lookup's score and
  * level, write the badge into the README, and set the outputs.
  */
 export async function run(): Promise<void> {
   try {
+    logOutsideRunner();
+
     // Read inputs
     const readmePath = core.getInput('readme-path') || 'README.md';
     const packageNameInput = core.getInput('package-name');
     const packageSource = core.getInput('package-source') || 'npm';
-    const registryUrl = (core.getInput('registry-url') || 'https://api.oa2a.org').replace(/\/+$/, '');
+    const registryUrl = registryBaseUrl(core.getInput('registry-url') || 'https://api.oa2a.org');
     // Read before step 1, so a value outside the accepted set fails the run before the lookup
     const createPr = booleanInput('create-pr', false);
     const autoMerge = booleanInput('auto-merge', true);
@@ -48,7 +64,7 @@ export async function run(): Promise<void> {
     }
 
     core.info(
-      `Found trust profile: score=${trustData.trustScore}, level=${trustData.trustLevel}`
+      `Found trust profile: score=${displayScore(trustData.trustScore)}, level=${trustData.trustLevel}`
     );
 
     // Step 3: Generate badge markdown, and stop unless the image shows what the lookup returned
@@ -74,6 +90,9 @@ export async function run(): Promise<void> {
       core.warning(`README not found at ${readmePath}. Skipping badge update.`);
       core.setOutput('updated', 'false');
       return;
+    }
+    if (fs.statSync(readmeFile).isDirectory()) {
+      throw new Error(`readme-path ${readmePath} is a directory, not a file.`);
     }
 
     const readmeContent = fs.readFileSync(readmeFile, 'utf-8');
@@ -201,6 +220,41 @@ function booleanInput(name: string, defaultValue: boolean): boolean {
   throw new Error(
     `Input ${name} is "${shown}"; accepted values: ${[...TRUE_VALUES, ...FALSE_VALUES].join(', ')}.`
   );
+}
+
+// Outside a runner, where GITHUB_ACTIONS is not "true", the log starts with the version and the
+// environment variables the inputs are read from.
+function logOutsideRunner(): void {
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    return;
+  }
+  const variables = INPUT_NAMES.map((name) => `INPUT_${name.toUpperCase()}`);
+  core.info(`trust-badge-action ${version}`);
+  core.info(
+    `This is a GitHub Action: it reads no command-line arguments and takes its inputs from the environment variables ${variables.slice(0, -1).join(', ')} and ${variables[variables.length - 1]}.`
+  );
+}
+
+// The registry URL with any trailing "/" removed. A value that is not an http or https URL fails
+// the run here, before the lookup is tried.
+function registryBaseUrl(value: string): string {
+  let protocol = '';
+  try {
+    protocol = new URL(value).protocol;
+  } catch {
+    // Not a URL at all
+  }
+  if (protocol !== 'https:' && protocol !== 'http:') {
+    throw new Error(`registry-url ${value} is not an http or https URL.`);
+  }
+  return value.replace(/\/+$/, '');
+}
+
+// The trust score on 0 to 100, truncated to an integer as the registry's badge image shows it, for
+// the log and the pull request body. The lookup returns it on 0 to 1, and the trust-score output
+// keeps that value. The lookup fails the run on a score that is not a number, so none reaches here.
+function displayScore(trustScore: number): string {
+  return String(Math.trunc(trustScore * 100));
 }
 
 // profile-url is the page the badge links to. The lookup's own profileUrl names a host with no DNS
@@ -334,7 +388,7 @@ async function createPullRequest(
         '',
         `| Field | Value |`,
         `|-------|-------|`,
-        `| Trust Score | ${trustData.trustScore} |`,
+        `| Trust Score | ${displayScore(trustData.trustScore)} |`,
         `| Trust Level | ${trustData.trustLevel} |`,
         `| Profile | [View on Registry](${badge.linkUrl}) |`,
         '',

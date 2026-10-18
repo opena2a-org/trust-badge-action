@@ -44,7 +44,7 @@ For a package with a trust profile, the step writes a badge into your README. Be
 [![OpenA2A Trust Score](https://api.oa2a.org/v1/trust/<agent-id>/badge.svg)](https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>)
 ```
 
-`<agent-id>` is the id the registry lookup returns for your package. When the lookup returns no agent id in UUID form, the image for a package name without `/` names the package instead: `https://api.oa2a.org/v1/trust/badge/<package-name>?source=<package-source>`.
+`<agent-id>` is the id the registry lookup returns for your package. When the lookup returns no agent id in UUID form, the image for a package name without `/` names the package instead: `https://api.oa2a.org/v1/trust/badge/<package-name>?source=<package-source>`. The badge links to the registry's JSON trust lookup for the package, the URL the action reads the trust score from, not to a web page.
 
 The action reads the package name from the first of `package.json`, `pyproject.toml`, `setup.py` and `setup.cfg` that names one. The lookup source stays `npm` whatever file the name came from, so a package on PyPI or GitHub sets `package-source`. Override either with:
 
@@ -62,7 +62,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 |-------|-------------|---------|
 | `readme-path` | Path to the README file, relative to the repository root; a path that resolves outside the checkout fails the run | `README.md` |
 | `package-name` | Package name (auto-detected if omitted) | |
-| `package-source` | Package source: `npm`, `pypi`, `github` | `npm` |
+| `package-source` | Package source: `npm`, `pypi`, `github`, `dockerhub`, `a2as` | `npm` |
 | `registry-url` | OpenA2A Registry API URL | `https://api.oa2a.org` |
 | `create-pr` | Create a PR instead of committing directly | `false` |
 | `auto-merge` | Auto-merge the PR (only when `create-pr: true`) | `true` |
@@ -75,7 +75,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 | Output | Description |
 |--------|-------------|
 | `trust-score` | Trust score as the registry lookup returns it: a number from 0 to 1, not rounded |
-| `trust-level` | Level: discovered, scanned, claimed, verified, certified |
+| `trust-level` | Level: discovered, scanned, claimed, verified, certified, or blocked for a package the registry has blocked, such as one whose scan failed |
 | `badge-url` | URL of the trust badge SVG |
 | `profile-url` | URL the badge links to: the registry trust lookup for the package |
 | `updated` | Whether the README was updated (`true`/`false`) |
@@ -84,6 +84,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 
 A package with no trust profile does not fail the run: the README is left as it is and `updated` is `false`. The run fails, with the README unchanged and no outputs set, when:
 
+- `registry-url` is not an `http` or `https` URL.
 - `create-pr` or `auto-merge` has a value other than `true`, `True`, `TRUE`, `false`, `False` or `FALSE`.
 - The registry gives no answer, a partial answer, a 429 or a 5xx on each of 3 tries.
 - The registry answers with another unexpected status, or with a body that is not JSON.

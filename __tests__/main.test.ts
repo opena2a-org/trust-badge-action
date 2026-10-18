@@ -505,6 +505,108 @@ describe('run', () => {
     });
   });
 
+  it.each(['not-a-url', 'ftp://api.oa2a.org'])(
+    'fails at once, before any lookup and naming the input, on registry-url %s',
+    async (value) => {
+      mockInputs['registry-url'] = value;
+      writeReadme('# My Project\n');
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledWith(`Action failed: registry-url ${value} is not an http or https URL.`);
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(readReadme()).toBe('# My Project\n');
+      expect(mockOutputs).toEqual({});
+    }
+  );
+
+  it.each([
+    ['https://api.oa2a.org/', 'https://api.oa2a.org'],
+    ['http://127.0.0.1:8080', 'http://127.0.0.1:8080'],
+  ])('looks the package up at registry-url %s', async (value, base) => {
+    mockInputs['registry-url'] = value;
+    writeReadme('# My Project\n');
+
+    await run();
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledWith(
+      `${base}/v1/trust/lookup?package=hackmyagent&source=npm`,
+      expect.objectContaining({ method: 'GET' })
+    );
+    expect(mockOutputs.updated).toBe('true');
+  });
+
+  it('fails naming readme-path, not with the file system error, when readme-path is a directory', async () => {
+    mockInputs['readme-path'] = readmePath;
+    fs.mkdirSync(readmePath);
+
+    await run();
+
+    expect(core.setFailed).toHaveBeenCalledWith(`Action failed: readme-path ${readmePath} is a directory, not a file.`);
+    expect(mockOutputs).toEqual({});
+  });
+
+  it('logs the trust score on 0 to 100, truncated to an integer, and sets trust-score as the lookup returned it', async () => {
+    writeReadme('# My Project\n');
+
+    await run();
+
+    expect(core.info).toHaveBeenCalledWith('Found trust profile: score=21, level=discovered');
+    expect(core.info).not.toHaveBeenCalledWith(expect.stringContaining('0.21666666666666667'));
+    expect(mockOutputs['trust-score']).toBe('0.21666666666666667');
+  });
+
+  it('fails the run at the lookup, and logs no score, when the trust score is not a number', async () => {
+    mockLookup({ ...lookup, trustScore: null as unknown as number });
+    writeReadme('# My Project\n');
+
+    await run();
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      'Action failed: Registry at https://api.oa2a.org returned status 200 with a JSON body that is not a trust profile: "trustScore" is not a number.'
+    );
+    expect(core.info).not.toHaveBeenCalledWith(expect.stringContaining('Found trust profile'));
+    expect(readReadme()).toBe('# My Project\n');
+    expect(mockOutputs).toEqual({});
+  });
+
+  describe('outside a runner', () => {
+    const originalActions = process.env.GITHUB_ACTIONS;
+    const { version } = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+    const inputsLine =
+      'This is a GitHub Action: it reads no command-line arguments and takes its inputs from the environment variables INPUT_README-PATH, INPUT_PACKAGE-NAME, INPUT_PACKAGE-SOURCE, INPUT_REGISTRY-URL, INPUT_CREATE-PR, INPUT_AUTO-MERGE and INPUT_GITHUB-TOKEN.';
+
+    afterEach(() => {
+      if (originalActions === undefined) {
+        delete process.env.GITHUB_ACTIONS;
+      } else {
+        process.env.GITHUB_ACTIONS = originalActions;
+      }
+    });
+
+    it('starts the log with the version and the environment variables the inputs are read from, then runs', async () => {
+      delete process.env.GITHUB_ACTIONS;
+      writeReadme('# My Project\n');
+
+      await run();
+
+      expect((core.info as jest.Mock).mock.calls.slice(0, 2)).toEqual([[`trust-badge-action ${version}`], [inputsLine]]);
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+    });
+
+    it('logs neither line in a runner', async () => {
+      process.env.GITHUB_ACTIONS = 'true';
+      writeReadme('# My Project\n');
+
+      await run();
+
+      expect(core.info).not.toHaveBeenCalledWith(`trust-badge-action ${version}`);
+      expect(core.info).not.toHaveBeenCalledWith(inputsLine);
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+    });
+  });
+
   describe('without create-pr', () => {
     beforeEach(() => {
       mockInputs['github-token'] = 'test-token';
@@ -641,7 +743,8 @@ describe('run', () => {
         expect.objectContaining({ head: 'opena2a/update-trust-badge', base: 'main' })
       );
       const { body } = mockOctokit.rest.pulls.create.mock.calls[0][0];
-      expect(body).toContain('| Trust Score | 0.21666666666666667 |');
+      expect(body).toContain('| Trust Score | 21 |');
+      expect(body).not.toContain('0.21666666666666667');
       expect(body).toContain(`| Profile | [View on Registry](${LINK_URL}) |`);
       expect(body).toContain('(https://github.com/opena2a-org/trust-badge-action)');
       expect(body).not.toContain('github.com/opena2a/');
