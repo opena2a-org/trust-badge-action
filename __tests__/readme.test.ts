@@ -455,6 +455,59 @@ describe('updateBadge', () => {
     });
   });
 
+  describe('a README whose header is an HTML block', () => {
+    const logo = '<p align="center">\n  <img src="logo.png" width="120">\n</p>';
+    const badges = '<p align="center">\n  <a href="https://npm.im/x"><img src="https://img.shields.io/npm/v/x"></a>\n</p>';
+    // One HTML block, from the first <p> line to the blank line, with the <h1> line inside it
+    const header = `${logo}\n<h1 align="center">Fancy Project</h1>\n${badges}`;
+    const rest = '\n\nIntro paragraph.\n\n## Install\n';
+    const content = `${header}${rest}`;
+    const expected = `${header}\n\n${wrapWithMarkers(badge)}${rest}`;
+
+    it('inserts the badge after the HTML block that holds the <h1>, as a paragraph of its own', () => {
+      expect(updateBadge(content, badge)).toBe(expected);
+    });
+
+    it('gives the same README when it runs twice', () => {
+      expect(updateBadge(updateBadge(content, badge), badge)).toBe(expected);
+    });
+
+    it('places the badge at the end of the last line of that block, the </p> line', () => {
+      expect(findBadgePosition(content)).toBe(content.split('\n').slice(0, 7).join('\n').length);
+    });
+
+    it.each([
+      ['<h1 align="center">Fancy Project</h1>'],
+      ['<H2>Fancy Project</H2>'],
+    ])('inserts the badge after an HTML block that %s opens', (line) => {
+      const readme = `${line}\n\nIntro paragraph.\n`;
+      expect(updateBadge(readme, badge)).toBe(`${line}\n\n${wrapWithMarkers(badge)}\n\nIntro paragraph.\n`);
+    });
+
+    // Blank lines keep the block out of the HTML blocks around it, and with no markdown heading the
+    // badge goes at the top
+    it.each([
+      ['a fenced code block', '```html\n<h1>Fancy</h1>\n```'],
+      ['a <pre> block', '<pre>\n<h1>Fancy</h1>\n</pre>'],
+      ['an HTML comment', '<!--\n<h1>Fancy</h1>\n-->'],
+    ])('does not read an <h1> inside %s as a heading', (_label, block) => {
+      const readme = `${logo}\n\n${block}\n\n${badges}\n\nIntro paragraph.\n`;
+      expect(findBadgePosition(readme)).toBe(0);
+      expect(updateBadge(readme, badge)).toBe(`${wrapWithMarkers(badge)}\n\n${readme}`);
+    });
+
+    it('inserts the badge after a markdown heading before the block', () => {
+      const readme = `# Title\n\n${content}`;
+      expect(updateBadge(readme, badge)).toBe(`# Title\n${wrapWithMarkers(badge)}\n\n${content}`);
+    });
+
+    it('inserts the badge after a markdown badge line after the block', () => {
+      const npmBadge = '[![npm](https://img.shields.io/npm/v/x)](https://npm.im/x)';
+      const readme = `${header}\n\n${npmBadge}${rest}`;
+      expect(updateBadge(readme, badge)).toBe(`${header}\n\n${npmBadge}\n${wrapWithMarkers(badge)}${rest}`);
+    });
+  });
+
   describe('on a README built to slow the badge pattern down', () => {
     it.each([
       ['repeated badge prefixes with no closing parenthesis', '[![x](https://api.oa2a.org/v1/trust/badge/'],
@@ -670,6 +723,7 @@ describe('updateBadge', () => {
       ['inserts the badge after the heading', '# P\r\n\r\nDescription.\r\n', `# P\r\n${wrapped}\r\n\r\nDescription.\r\n`],
       ['inserts the badge after the other badges', `# P\r\n${npmBadge}\r\n`, `# P\r\n${npmBadge}\r\n${wrapped}\r\n`],
       ['inserts the badge at the top', 'Description.\r\n', `${wrapped}\r\n\r\nDescription.\r\n`],
+      ['inserts the badge after an HTML block that holds an <h1>, after a blank line,', '<p>\r\n<h1>P</h1>\r\n</p>\r\n\r\nDescription.\r\n', `<p>\r\n<h1>P</h1>\r\n</p>\r\n\r\n${wrapped}\r\n\r\nDescription.\r\n`],
       ['replaces a badge alone on its line', `# P\r\n\r\n${own}\r\n`, `# P\r\n\r\n${wrapped}\r\n`],
       ['replaces a badge alone on a list continuation line', `# P\r\n\r\n- text\r\n  ${own}\r\n`, `# P\r\n\r\n- text\r\n  <!-- opena2a-trust-badge -->\r\n  ${badge}\r\n  <!-- /opena2a-trust-badge -->\r\n`],
       ['replaces a badge that starts a line with other text', `# P\r\n\r\n${own} x\r\n`, `# P\r\n\r\n<!-- opena2a-trust-badge -->\r\n${badge}<!-- /opena2a-trust-badge --> x\r\n`],
