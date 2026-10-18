@@ -1,3 +1,5 @@
+import { USER_AGENT } from './version';
+
 export interface TrustLookupResponse {
   agentId: string;
   name: string;
@@ -156,7 +158,8 @@ async function withRetries<T>(
  * A network error or a timeout (while the body is read as well), a 429 or a 5xx is retried with
  * backoff; the lookup throws when the last attempt fails the same way, and at once on any other
  * unexpected status code or on a body that is not JSON or not a trust profile. The message for a
- * failing status quotes the registry's error text when its answer carries one.
+ * failing status names the reason phrase when the answer has one, and quotes the registry's error
+ * text when its answer carries one.
  */
 export async function lookupTrust(
   registryUrl: string,
@@ -180,7 +183,7 @@ async function lookupOnce(
       method: 'GET',
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'opena2a-trust-badge-action/1.0',
+        'User-Agent': USER_AGENT,
       },
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -195,7 +198,11 @@ async function lookupOnce(
 
   if (!response.ok) {
     const errorText = await registryErrorText(response);
-    let message = `Registry returned unexpected status ${response.status}: ${response.statusText}`;
+    let message = `Registry returned unexpected status ${response.status}`;
+    // statusText is empty when the answer carries no reason phrase, as no HTTP/2 answer does
+    if (response.statusText) {
+      message += `: ${response.statusText}`;
+    }
     if (errorText !== undefined) {
       message += ` (${errorText})`;
     }
@@ -251,7 +258,7 @@ async function fetchBadgeTextOnce(imageUrl: string, timeoutMs: number): Promise<
       method: 'GET',
       headers: {
         Accept: 'image/svg+xml',
-        'User-Agent': 'opena2a-trust-badge-action/1.0',
+        'User-Agent': USER_AGENT,
       },
       signal: AbortSignal.timeout(timeoutMs),
     });

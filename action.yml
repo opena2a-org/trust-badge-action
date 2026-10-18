@@ -45,5 +45,5 @@ outputs:
     description: 'Whether the README was updated'
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/index.js'

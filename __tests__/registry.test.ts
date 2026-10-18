@@ -1,5 +1,7 @@
+import * as fs from 'fs';
 import * as http from 'http';
 import { AddressInfo } from 'net';
+import * as path from 'path';
 import { fetchBadgeText, lookupTrust, TrustLookupResponse, trustQuery } from '../src/registry';
 
 // Save original fetch
@@ -144,6 +146,42 @@ describe('lookupTrust', () => {
         )
       );
       expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [
+        'that quotes the error text',
+        '{"error":"invalid source: bogus (valid: npm, pypi, github, dockerhub, a2as)"}',
+        'Registry returned unexpected status 400 (invalid source: bogus (valid: npm, pypi, github, dockerhub, a2as))',
+      ],
+      ['with no error text', '<html>Bad Request</html>', 'Registry returned unexpected status 400'],
+    ])(
+      'names no reason phrase for an answer that has none, as an HTTP/2 answer has none, in a message %s',
+      async (_label, body, message) => {
+        global.fetch = jest.fn().mockResolvedValue(new Response(body, { status: 400 }));
+
+        await expect(lookup()).rejects.toThrow(new Error(message));
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+      }
+    );
+
+    it('names no reason phrase for an answer whose status line ends after the status code', async () => {
+      const server = http.createServer((_request, response) => {
+        response.writeHead(400, '', { 'Content-Type': 'application/json' });
+        response.end('{"error":"invalid source: bogus (valid: npm, pypi, github, dockerhub, a2as)"}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const registryUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      try {
+        await expect(lookupTrust(registryUrl, 'hackmyagent', 'bogus', { retryDelayMs: 0 })).rejects.toThrow(
+          new Error(
+            'Registry returned unexpected status 400 (invalid source: bogus (valid: npm, pypi, github, dockerhub, a2as))'
+          )
+        );
+      } finally {
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
     });
 
     it.each([
@@ -450,5 +488,23 @@ describe('fetchBadgeText', () => {
       `Registry returned status 404 for the badge image at ${imageUrl}`
     );
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the User-Agent', () => {
+  // The version in package.json, the one a release bumps
+  const { version } = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+
+  it('names the version in package.json on the lookup and on the badge image request', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(new Response('{"error":"not found"}', { status: 404 }))
+      .mockResolvedValueOnce(new Response('<svg xmlns="http://www.w3.org/2000/svg"></svg>', { status: 200 }));
+
+    await lookupTrust('https://api.oa2a.org', 'hackmyagent', 'npm');
+    await fetchBadgeText('https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg');
+
+    const userAgents = (global.fetch as jest.Mock).mock.calls.map(([, init]) => init.headers['User-Agent']);
+    expect(userAgents).toEqual([`opena2a-trust-badge-action/${version}`, `opena2a-trust-badge-action/${version}`]);
   });
 });
