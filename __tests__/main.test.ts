@@ -613,5 +613,66 @@ describe('run', () => {
       expect(mockOctokit.rest.pulls.create).toHaveBeenCalled();
       expect(mockOctokit.rest.pulls.merge).not.toHaveBeenCalled();
     });
+
+    // The values core.getBooleanInput accepts
+    it.each(['True', 'TRUE'])(
+      'opens a pull request for create-pr: %s and commits nothing to the branch the run is for',
+      async (value) => {
+        mockInputs['create-pr'] = value;
+
+        await run();
+
+        expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(
+          expect.objectContaining({ head: 'opena2a/update-trust-badge', base: 'main' })
+        );
+        expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+          expect.objectContaining({ branch: 'opena2a/update-trust-badge' })
+        );
+        expect(mockOctokit.rest.repos.createOrUpdateFileContents).not.toHaveBeenCalledWith(
+          expect.objectContaining({ branch: 'main' })
+        );
+        expect(core.setFailed).not.toHaveBeenCalled();
+      }
+    );
+
+    it.each(['False', 'FALSE'])('does not merge and does not enable auto-merge when auto-merge is %s', async (value) => {
+      mockInputs['auto-merge'] = value;
+
+      await run();
+
+      expect(mockOctokit.rest.pulls.create).toHaveBeenCalled();
+      expect(mockOctokit.rest.pulls.merge).not.toHaveBeenCalled();
+      expect(mockOctokit.graphql).not.toHaveBeenCalled();
+      expect(core.setFailed).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['create-pr', 'yes'],
+      ['auto-merge', 'no'],
+    ])('fails before the lookup and names the input when %s is %s', async (name, value) => {
+      mockInputs[name] = value;
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        `Action failed: Input ${name} is "${value}"; accepted values: true, True, TRUE, false, False, FALSE.`
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(github.getOctokit).not.toHaveBeenCalled();
+      expect(readReadme()).toBe('# My Project\n');
+      expect(mockOutputs).toEqual({});
+    });
+
+    it('quotes at most 80 characters of a value it does not accept, without its control characters', async () => {
+      mockInputs['create-pr'] = `ye\u0007s\r\nnext line ${'x'.repeat(100)}`;
+
+      await run();
+
+      const shown = `yesnext line ${'x'.repeat(67)}`;
+      expect(shown).toHaveLength(80);
+      expect(core.setFailed).toHaveBeenCalledWith(
+        `Action failed: Input create-pr is "${shown}"; accepted values: true, True, TRUE, false, False, FALSE.`
+      );
+    });
   });
 });
