@@ -191,7 +191,7 @@ describe('lookupTrust', () => {
     });
 
     it('drops control characters from the error text', async () => {
-      const error = 'bad\u0000 source\u001b[31m\r\n::warning::x\u0085‮evil';
+      const error = 'bad\u0000 source\u001b[31m\r\n::warning::x\u0085\u{202e}evil';
       global.fetch = jest.fn().mockResolvedValue(badRequest(JSON.stringify({ error })));
 
       await expect(lookup()).rejects.toThrow(
