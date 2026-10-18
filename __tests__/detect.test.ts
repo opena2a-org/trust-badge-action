@@ -138,6 +138,29 @@ describe('detectPackageName', () => {
     expect(detectPackageName(tmpDir)).toBe('pkg');
   });
 
+  it.each([
+    ['a dotted project.name key with no [project] header', 'project.name = "pkg"\nproject.version = "0.1.0"\n'],
+    ['a dotted key with spaces and quoted parts', '"project" . \'name\' = "pkg"\n'],
+    ['a dotted poetry.name key in a [tool] table', '[tool]\npoetry.name = "pkg"\n'],
+    ['a dotted tool.poetry.name key with no header', 'tool.poetry.name = "pkg"\n'],
+    ['a multi-line basic string on one line', '[project]\nname = """pkg"""\n'],
+    ['a multi-line literal string on one line', "[project]\nname = '''pkg'''\n"],
+    ['a dotted key holding a multi-line string on one line', 'project.name = """pkg"""\n'],
+  ])('reads the name written as %s', (_label, content) => {
+    fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), content);
+    expect(detectPackageName(tmpDir)).toBe('pkg');
+  });
+
+  it.each([
+    ['a quoted key holding a dot', '"project.name" = "not-this"\n'],
+    ['a dotted key one level too deep', '[project]\nname.first = "not-this"\n'],
+    ['a dotted project.name key in another table', '[tool.uv]\nproject.name = "not-this"\n'],
+    ['a name key in a [[project]] array of tables','[[project]]\nname = "not-this"\n'],
+  ])('ignores %s', (_label, content) => {
+    fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), content);
+    expect(detectPackageName(tmpDir)).toBeNull();
+  });
+
   it('returns null when no detection files exist', () => {
     expect(detectPackageName(tmpDir)).toBeNull();
   });

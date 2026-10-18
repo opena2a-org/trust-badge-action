@@ -30085,7 +30085,9 @@ function detectPackageName(dir) {
 }
 /**
  * Read the `name` key of one table of a pyproject.toml, such as `project` or `tool.poetry`.
- * A `name` key in any other table, or before the first table header, is ignored, and a line
+ * The key is read under that table's header (`[project]` then `name = "..."`), or as a dotted key
+ * under a header of a parent table or before the first header (`project.name = "..."`). A `name`
+ * key in any other table, or a bare `name` before the first table header, is ignored, and a line
  * inside a multi-line string, array or inline table is read as neither a key nor a table header.
  *
  * @param content - The pyproject.toml text
@@ -30093,26 +30095,45 @@ function detectPackageName(dir) {
  * @returns The name, or null when that table has no quoted `name` key.
  */
 function pyprojectTableName(content, table) {
-    let inTable = false;
+    const target = [...table.split('.'), 'name'].join('\0');
+    // The key path of the table the next keys belong to: [] before the first header, null under a
+    // header this reader does not follow ([[array.of.tables]] or one it cannot read)
+    let tablePath = [];
     for (const line of tomlLinesOutsideValues(content)) {
         if (/^\s*\[/.test(line)) {
             // A table header, [table] or [[array.of.tables]], with an optional trailing comment. A header
             // this pattern does not read ends the table being read too.
             const header = line.match(/^\s*(?:\[\[([^\[\]]+)\]\]|\[([^\[\]]+)\])\s*(?:#.*)?$/);
-            const headerName = header?.[2]
-                ?.split('.')
-                .map((part) => part.trim().replace(/^"(.*)"$|^'(.*)'$/, '$1$2'))
-                .join('.');
-            inTable = headerName === table;
+            tablePath = header?.[2] === undefined ? null : tomlKeyParts(header[2]);
             continue;
         }
-        if (!inTable) {
+        if (tablePath === null) {
             continue;
         }
-        // TOML basic ("...") and literal ('...') strings
-        const nameMatch = line.match(/^\s*name\s*=\s*(?:"([^"]+)"|'([^']+)')/);
-        if (nameMatch) {
-            return nameMatch[1] ?? nameMatch[2];
+        // A key, plain or dotted, set to a TOML basic ("..."), literal ('...') or one-line multi-line
+        // ("""...""" or '''...''') string
+        const keyMatch = line.match(/^\s*([^=]+?)\s*=\s*(?:"""(.+?)"""|'''(.+?)'''|"([^"]+)"|'([^']+)')/);
+        const keyParts = keyMatch ? tomlKeyParts(keyMatch[1]) : null;
+        if (keyMatch && keyParts && [...tablePath, ...keyParts].join('\0') === target) {
+            return keyMatch[2] ?? keyMatch[3] ?? keyMatch[4] ?? keyMatch[5];
+        }
+    }
+    return null;
+}
+/**
+ * Split a TOML key, such as `project.name`, `"project" . 'name'` or `tool."poetry"`, into its parts.
+ *
+ * @param key - The key text, without the `=` that follows it or the brackets of a table header
+ * @returns The parts with their quotes removed, or null when the text is not a key.
+ */
+function tomlKeyParts(key) {
+    const part = /\s*(?:([A-Za-z0-9_-]+)|"([^"\\]*)"|'([^']*)')\s*(\.|$)/y;
+    const parts = [];
+    let match;
+    while (part.lastIndex < key.length && (match = part.exec(key)) !== null) {
+        parts.push(match[1] ?? match[2] ?? match[3]);
+        if (match[4] === '') {
+            return parts;
         }
     }
     return null;
