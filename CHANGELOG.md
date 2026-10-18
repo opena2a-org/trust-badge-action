@@ -20,6 +20,7 @@ Each of these now fails the run, with no outputs set:
 ### Changed
 
 - The action runs on Node 24: `runs.using` is `node24`, where 1.1.0 declared `node20`.
+- The bundle carries `@actions/core` 2.0.3 and `@actions/github` 8.0.1, which bring undici 6.29.1. 1.1.0 carried `@actions/core` 1.11.1 and `@actions/github` 6.0.1, which bring undici 5.29.0 and `@fastify/busboy` 2.1.1, two versions `npm audit` reports advisories against.
 - `registry-url` defaults to `https://api.oa2a.org`. The 1.1.0 default, `https://registry.opena2a.org`, has no DNS record, so a 1.1.0 step without `registry-url` fails at the lookup.
 - The badge links to the registry's JSON trust lookup for the package, `<registry-url>/v1/trust/lookup?package=<package-name>&source=<package-source>`, and the `profile-url` output is that URL. 1.1.0 linked to `<registry-url>/agents/<agent-id>`, which answers 404 on `https://api.oa2a.org`, and set `profile-url` to the lookup's `profileUrl`, on `registry.opena2a.org`.
 - When the lookup returns no agent id in UUID form, the badge image for a package name without `/` names the package: `<registry-url>/v1/trust/badge/<package-name>?source=<package-source>`.
