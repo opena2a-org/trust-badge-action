@@ -2,6 +2,7 @@
 
 A package with no trust profile does not fail the run: the README is left as it is and `updated` is `false`. The run fails, with the README unchanged and no outputs set, when:
 
+- `registry-url` is not an `http` or `https` URL. The run fails before the registry lookup, with an error that names the input and quotes the value: `Action failed: registry-url not-a-url is not an http or https URL.` An empty value is read as the default, `https://api.oa2a.org`.
 - `create-pr` or `auto-merge` has a value other than `true`, `True`, `TRUE`, `false`, `False` or `FALSE`, the values `getBooleanInput` in `@actions/core` accepts. The run fails before the registry lookup, with an error that names the input and quotes the value: `Action failed: Input create-pr is "yes"; accepted values: true, True, TRUE, false, False, FALSE.` An empty value is read as the default `action.yml` gives the input.
 - The registry does not answer. A lookup with no answer or only part of one, a 429 or a 5xx is tried 3 times, each attempt allowed 15 seconds, with pauses of 2 and then 4 seconds: against a registry that does not answer, the run fails after about 51 seconds.
 - The registry answers with another unexpected status, or with a body that is not JSON or not a trust profile (an object with `agentId`, `trustScore` and `trustLevel`). For a failing status, the log quotes the registry's `error` text when it sends one.

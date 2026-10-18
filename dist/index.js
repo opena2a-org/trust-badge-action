@@ -30236,6 +30236,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.INPUT_NAMES = void 0;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
@@ -30245,17 +30246,30 @@ const registry_1 = __nccwpck_require__(2976);
 const readme_1 = __nccwpck_require__(7553);
 const detect_1 = __nccwpck_require__(1052);
 const badge_1 = __nccwpck_require__(3120);
+// The version in package.json, bundled into dist/index.js by the build.
+const { version } = __nccwpck_require__(8330);
+// The inputs action.yml declares, in its order.
+exports.INPUT_NAMES = [
+    'readme-path',
+    'package-name',
+    'package-source',
+    'registry-url',
+    'create-pr',
+    'auto-merge',
+    'github-token',
+];
 /**
  * Run the action: look up the package, check that its badge image shows the lookup's score and
  * level, write the badge into the README, and set the outputs.
  */
 async function run() {
     try {
+        logOutsideRunner();
         // Read inputs
         const readmePath = core.getInput('readme-path') || 'README.md';
         const packageNameInput = core.getInput('package-name');
         const packageSource = core.getInput('package-source') || 'npm';
-        const registryUrl = (core.getInput('registry-url') || 'https://api.oa2a.org').replace(/\/+$/, '');
+        const registryUrl = registryBaseUrl(core.getInput('registry-url') || 'https://api.oa2a.org');
         // Read before step 1, so a value outside the accepted set fails the run before the lookup
         const createPr = booleanInput('create-pr', false);
         const autoMerge = booleanInput('auto-merge', true);
@@ -30277,7 +30291,7 @@ async function run() {
             core.setOutput('updated', 'false');
             return;
         }
-        core.info(`Found trust profile: score=${trustData.trustScore}, level=${trustData.trustLevel}`);
+        core.info(`Found trust profile: score=${displayScore(trustData.trustScore)}, level=${trustData.trustLevel}`);
         // Step 3: Generate badge markdown, and stop unless the image shows what the lookup returned
         const badge = (0, badge_1.resolveBadge)(registryUrl, packageName, packageSource, trustData);
         await checkBadgeImage(badge, trustData, packageName, (0, registry_1.trustLookupUrl)(registryUrl, packageName, packageSource));
@@ -30293,6 +30307,9 @@ async function run() {
             core.warning(`README not found at ${readmePath}. Skipping badge update.`);
             core.setOutput('updated', 'false');
             return;
+        }
+        if (fs.statSync(readmeFile).isDirectory()) {
+            throw new Error(`readme-path ${readmePath} is a directory, not a file.`);
         }
         const readmeContent = fs.readFileSync(readmeFile, 'utf-8');
         const updatedContent = (0, readme_1.updateBadge)(readmeContent, (0, badge_1.badgeMarkdown)(badge), {
@@ -30396,6 +30413,37 @@ function booleanInput(name, defaultValue) {
     }
     const shown = Array.from(value.replace(/[\x00-\x1f\x7f-\x9f]/g, '')).slice(0, 80).join('');
     throw new Error(`Input ${name} is "${shown}"; accepted values: ${[...TRUE_VALUES, ...FALSE_VALUES].join(', ')}.`);
+}
+// Outside a runner, where GITHUB_ACTIONS is not "true", the log starts with the version and the
+// environment variables the inputs are read from.
+function logOutsideRunner() {
+    if (process.env.GITHUB_ACTIONS === 'true') {
+        return;
+    }
+    const variables = exports.INPUT_NAMES.map((name) => `INPUT_${name.toUpperCase()}`);
+    core.info(`trust-badge-action ${version}`);
+    core.info(`This is a GitHub Action: it reads no command-line arguments and takes its inputs from the environment variables ${variables.slice(0, -1).join(', ')} and ${variables[variables.length - 1]}.`);
+}
+// The registry URL with any trailing "/" removed. A value that is not an http or https URL fails
+// the run here, before the lookup is tried.
+function registryBaseUrl(value) {
+    let protocol = '';
+    try {
+        protocol = new URL(value).protocol;
+    }
+    catch {
+        // Not a URL at all
+    }
+    if (protocol !== 'https:' && protocol !== 'http:') {
+        throw new Error(`registry-url ${value} is not an http or https URL.`);
+    }
+    return value.replace(/\/+$/, '');
+}
+// The trust score on 0 to 100, truncated to an integer as the registry's badge image shows it, for
+// the log and the pull request body. The lookup returns it on 0 to 1, and the trust-score output
+// keeps that value. The lookup fails the run on a score that is not a number, so none reaches here.
+function displayScore(trustScore) {
+    return String(Math.trunc(trustScore * 100));
 }
 // profile-url is the page the badge links to. The lookup's own profileUrl names a host with no DNS
 // record, so it is not passed through.
@@ -30511,7 +30559,7 @@ async function createPullRequest(token, repoPath, content, trustData, badge, aut
                 '',
                 `| Field | Value |`,
                 `|-------|-------|`,
-                `| Trust Score | ${trustData.trustScore} |`,
+                `| Trust Score | ${displayScore(trustData.trustScore)} |`,
                 `| Trust Level | ${trustData.trustLevel} |`,
                 `| Profile | [View on Registry](${badge.linkUrl}) |`,
                 '',
@@ -33259,6 +33307,14 @@ function parseParams (str) {
 
 module.exports = parseParams
 
+
+/***/ }),
+
+/***/ 8330:
+/***/ ((module) => {
+
+"use strict";
+module.exports = /*#__PURE__*/JSON.parse('{"name":"trust-badge-action","version":"1.0.0","description":"GitHub Action that automatically adds and updates the OpenA2A trust score badge in your README","main":"dist/index.js","scripts":{"build":"rm -rf dist && ncc build src/index.ts --license licenses.txt && node scripts/strip-source-map-comments.js dist/index.js","test":"jest","lint":"tsc --noEmit"},"repository":{"type":"git","url":"https://github.com/opena2a-org/trust-badge-action.git"},"keywords":["github-action","opena2a","trust","badge","agent-security"],"author":"OpenA2A","license":"Apache-2.0","dependencies":{"@actions/core":"^1.10.1","@actions/github":"^6.0.0"},"devDependencies":{"@types/jest":"^29.5.12","@types/node":"^20.11.0","@vercel/ncc":"^0.38.1","jest":"^29.7.0","ts-jest":"^29.1.2","typescript":"^5.3.3"}}');
 
 /***/ })
 

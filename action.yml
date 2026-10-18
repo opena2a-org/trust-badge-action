@@ -13,7 +13,7 @@ inputs:
     description: 'Package name to look up (auto-detected from package.json if not provided)'
     required: false
   package-source:
-    description: 'Package source: npm, pypi, github'
+    description: 'Package source: npm, pypi, github, dockerhub, a2as'
     required: false
     default: 'npm'
   registry-url:

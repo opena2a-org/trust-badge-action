@@ -4,8 +4,9 @@ import * as path from 'path';
 import * as core from '@actions/core';
 import { badgeMarkdown, resolveBadge } from '../src/badge';
 import { detectPackageName } from '../src/detect';
+import { INPUT_NAMES } from '../src/main';
 import { hasTrustBadge, updateBadge } from '../src/readme';
-import { TrustLookupResponse } from '../src/registry';
+import { TrustLookupResponse, lookupTrust } from '../src/registry';
 
 function readme(): string {
   return fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf-8');
@@ -107,6 +108,39 @@ describe('README.md', () => {
       .replace('source=npm', 'source=<package-source>');
     expect(imageUrl).toBe(`${REGISTRY}/v1/trust/badge/<package-name>?source=<package-source>`);
     expect(readme()).toContain(`\`${imageUrl}\``);
+  });
+
+  it('says the badge links to the JSON trust lookup, the URL the action reads the trust score from', async () => {
+    expect(readme()).toContain(
+      "The badge links to the registry's JSON trust lookup for the package, the URL the action reads the trust score from, not to a web page."
+    );
+    const badge = resolveBadge(REGISTRY, 'my-agent', 'npm', lookup('00000000-0000-0000-0000-000000000000'));
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+    try {
+      await lookupTrust(REGISTRY, 'my-agent', 'npm');
+      expect(global.fetch).toHaveBeenCalledWith(
+        badge.linkUrl,
+        expect.objectContaining({ headers: expect.objectContaining({ Accept: 'application/json' }) })
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it('lists the package sources the registry accepts in action.yml and in the inputs table', () => {
+    // The sources the registry's 400 answer names for a source it does not know
+    const sources = ['npm', 'pypi', 'github', 'dockerhub', 'a2as'];
+    expect(actionYml()).toContain(`    description: 'Package source: ${sources.join(', ')}'\n`);
+    const row = readme().split('\n').find((line) => line.startsWith('| `package-source` |'));
+    expect(row).toContain(`| Package source: ${sources.map((source) => `\`${source}\``).join(', ')} |`);
+  });
+
+  it('names blocked, and what it means, with the other trust levels in the outputs table', () => {
+    const row = readme().split('\n').find((line) => line.startsWith('| `trust-level` |'));
+    expect(row).toContain(
+      '| Level: discovered, scanned, claimed, verified, certified, or blocked for a package the registry has blocked'
+    );
   });
 
   it('links the page that lists the documented behaviour the v1 tag does not have', () => {
@@ -287,6 +321,21 @@ describe('README.md', () => {
       expect(row).toBeDefined();
       const cells = (row as string).split('|').map((cell) => cell.trim());
       expect([name, cells[cells.length - 2]]).toEqual([name, defaultValue ? `\`${defaultValue}\`` : '']);
+    }
+  });
+});
+
+describe('the log outside a runner', () => {
+  it('names each input action.yml declares by the INPUT_<NAME> variable getInput reads it from', () => {
+    expect(INPUT_NAMES).toEqual(inputDefaults().map(([name]) => name));
+    for (const name of INPUT_NAMES) {
+      const variable = `INPUT_${name.toUpperCase()}`;
+      process.env[variable] = 'given-value';
+      try {
+        expect([name, core.getInput(name)]).toEqual([name, 'given-value']);
+      } finally {
+        delete process.env[variable];
+      }
     }
   });
 });
