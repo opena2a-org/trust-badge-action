@@ -30246,8 +30246,7 @@ const registry_1 = __nccwpck_require__(2976);
 const readme_1 = __nccwpck_require__(7553);
 const detect_1 = __nccwpck_require__(1052);
 const badge_1 = __nccwpck_require__(3120);
-// The version in package.json, bundled into dist/index.js by the build.
-const { version } = __nccwpck_require__(8330);
+const version_1 = __nccwpck_require__(311);
 // The inputs action.yml declares, in its order.
 exports.INPUT_NAMES = [
     'readme-path',
@@ -30330,7 +30329,8 @@ async function run() {
         const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
         const branch = runBranch();
         if (!token) {
-            core.info('No GITHUB_TOKEN available. README updated locally but not committed.');
+            // A warning, so the run summary shows it: the run still passes
+            core.warning('Neither the GITHUB_TOKEN environment variable nor the github-token input has a value, so the README was updated locally but not committed.');
         }
         else if (!branch) {
             core.warning(`The run is for ${github.context.ref || 'no ref'}, which is not a branch, so the README was updated locally but not committed.`);
@@ -30421,7 +30421,7 @@ function logOutsideRunner() {
         return;
     }
     const variables = exports.INPUT_NAMES.map((name) => `INPUT_${name.toUpperCase()}`);
-    core.info(`trust-badge-action ${version}`);
+    core.info(`trust-badge-action ${version_1.VERSION}`);
     core.info(`This is a GitHub Action: it reads no command-line arguments and takes its inputs from the environment variables ${variables.slice(0, -1).join(', ')} and ${variables[variables.length - 1]}.`);
 }
 // The registry URL with any trailing "/" removed. A value that is not an http or https URL fails
@@ -31201,7 +31201,7 @@ function updateBadge(content, badgeMarkdown, owner) {
 /***/ }),
 
 /***/ 2976:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
@@ -31211,6 +31211,7 @@ exports.trustQuery = trustQuery;
 exports.trustLookupUrl = trustLookupUrl;
 exports.lookupTrust = lookupTrust;
 exports.fetchBadgeText = fetchBadgeText;
+const version_1 = __nccwpck_require__(311);
 const DEFAULT_LOOKUP_OPTIONS = {
     attempts: 3,
     retryDelayMs: 2000,
@@ -31335,7 +31336,8 @@ async function withRetries(attempts, retryDelayMs, attemptOnce) {
  * A network error or a timeout (while the body is read as well), a 429 or a 5xx is retried with
  * backoff; the lookup throws when the last attempt fails the same way, and at once on any other
  * unexpected status code or on a body that is not JSON or not a trust profile. The message for a
- * failing status quotes the registry's error text when its answer carries one.
+ * failing status names the reason phrase when the answer has one, and quotes the registry's error
+ * text when its answer carries one.
  */
 async function lookupTrust(registryUrl, packageName, source, options = {}) {
     const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
@@ -31349,7 +31351,7 @@ async function lookupOnce(url, registryUrl, timeoutMs) {
             method: 'GET',
             headers: {
                 Accept: 'application/json',
-                'User-Agent': 'opena2a-trust-badge-action/1.0',
+                'User-Agent': version_1.USER_AGENT,
             },
             signal: AbortSignal.timeout(timeoutMs),
         });
@@ -31363,7 +31365,11 @@ async function lookupOnce(url, registryUrl, timeoutMs) {
     }
     if (!response.ok) {
         const errorText = await registryErrorText(response);
-        let message = `Registry returned unexpected status ${response.status}: ${response.statusText}`;
+        let message = `Registry returned unexpected status ${response.status}`;
+        // statusText is empty when the answer carries no reason phrase, as no HTTP/2 answer does
+        if (response.statusText) {
+            message += `: ${response.statusText}`;
+        }
         if (errorText !== undefined) {
             message += ` (${errorText})`;
         }
@@ -31410,7 +31416,7 @@ async function fetchBadgeTextOnce(imageUrl, timeoutMs) {
             method: 'GET',
             headers: {
                 Accept: 'image/svg+xml',
-                'User-Agent': 'opena2a-trust-badge-action/1.0',
+                'User-Agent': version_1.USER_AGENT,
             },
             signal: AbortSignal.timeout(timeoutMs),
         });
@@ -31433,6 +31439,21 @@ async function fetchBadgeTextOnce(imageUrl, timeoutMs) {
         throw new TransientLookupError(`Failed to read the badge image at ${imageUrl}: ${message}`);
     }
 }
+
+
+/***/ }),
+
+/***/ 311:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.USER_AGENT = exports.VERSION = void 0;
+// The version in package.json, bundled into dist/index.js by the build.
+exports.VERSION = __nccwpck_require__(8330).version;
+// The User-Agent of the action's requests to the registry, naming that version.
+exports.USER_AGENT = `opena2a-trust-badge-action/${exports.VERSION}`;
 
 
 /***/ }),
@@ -33314,7 +33335,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"trust-badge-action","version":"1.0.0","description":"GitHub Action that automatically adds and updates the OpenA2A trust score badge in your README","main":"dist/index.js","scripts":{"build":"rm -rf dist && ncc build src/index.ts --license licenses.txt && node scripts/strip-source-map-comments.js dist/index.js","test":"jest","lint":"tsc --noEmit"},"repository":{"type":"git","url":"https://github.com/opena2a-org/trust-badge-action.git"},"keywords":["github-action","opena2a","trust","badge","agent-security"],"author":"OpenA2A","license":"Apache-2.0","dependencies":{"@actions/core":"^1.10.1","@actions/github":"^6.0.0"},"devDependencies":{"@types/jest":"^29.5.12","@types/node":"^20.11.0","@vercel/ncc":"^0.38.1","jest":"^29.7.0","ts-jest":"^29.1.2","typescript":"^5.3.3"}}');
+module.exports = {"version":"1.0.0"};
 
 /***/ })
 

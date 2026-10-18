@@ -6,9 +6,7 @@ import { TrustLookupResponse, fetchBadgeText, lookupTrust, trustLookupUrl } from
 import { updateBadge } from './readme';
 import { detectPackageName } from './detect';
 import { TrustBadge, badgeMarkdown, resolveBadge } from './badge';
-
-// The version in package.json, bundled into dist/index.js by the build.
-const { version } = require('../package.json') as { version: string };
+import { VERSION } from './version';
 
 // The inputs action.yml declares, in its order.
 export const INPUT_NAMES = [
@@ -117,7 +115,10 @@ export async function run(): Promise<void> {
     const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
     const branch = runBranch();
     if (!token) {
-      core.info('No GITHUB_TOKEN available. README updated locally but not committed.');
+      // A warning, so the run summary shows it: the run still passes
+      core.warning(
+        'Neither the GITHUB_TOKEN environment variable nor the github-token input has a value, so the README was updated locally but not committed.'
+      );
     } else if (!branch) {
       core.warning(
         `The run is for ${github.context.ref || 'no ref'}, which is not a branch, so the README was updated locally but not committed.`
@@ -229,7 +230,7 @@ function logOutsideRunner(): void {
     return;
   }
   const variables = INPUT_NAMES.map((name) => `INPUT_${name.toUpperCase()}`);
-  core.info(`trust-badge-action ${version}`);
+  core.info(`trust-badge-action ${VERSION}`);
   core.info(
     `This is a GitHub Action: it reads no command-line arguments and takes its inputs from the environment variables ${variables.slice(0, -1).join(', ')} and ${variables[variables.length - 1]}.`
   );

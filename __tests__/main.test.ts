@@ -189,6 +189,37 @@ describe('run', () => {
     expect(github.getOctokit).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['is not set', undefined],
+    ['is empty', ''],
+  ])(
+    'warns, rather than only logging it, that the README is not committed when GITHUB_TOKEN %s and github-token is not given',
+    async (_label, token) => {
+      if (token !== undefined) {
+        process.env.GITHUB_TOKEN = token;
+      }
+      writeReadme('# My Project\n');
+
+      await run();
+
+      expect(core.setFailed).not.toHaveBeenCalled();
+      expect(core.warning).toHaveBeenCalledWith(
+        'Neither the GITHUB_TOKEN environment variable nor the github-token input has a value, so the README was updated locally but not committed.'
+      );
+      expect(core.info).not.toHaveBeenCalledWith(expect.stringContaining('not committed'));
+      expect(github.getOctokit).not.toHaveBeenCalled();
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+      expect(mockOutputs.updated).toBe('true');
+
+      const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf-8');
+      const row = readme.split('\n').find((line) => line.startsWith('| `github-token` |'));
+      expect(row).toContain('without either, the README is updated in the workspace only, with a warning');
+      const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+      const v1Row = page.split('\n').find((line) => line.startsWith('| Without a `GITHUB_TOKEN` environment variable'));
+      expect((v1Row as string).split('|')[1]).toContain('with a warning');
+    }
+  );
+
   it('names every manifest it reads when no package name is found', async () => {
     writeReadme('# My Project\n');
     delete mockInputs['package-name'];
@@ -1016,4 +1047,36 @@ describe('the Failed Runs text', () => {
       }
     }
   );
+});
+
+describe('the PR mode text', () => {
+  const read = (file: string): string => fs.readFileSync(path.join(__dirname, '..', file), 'utf-8');
+  const setting = 'Allow GitHub Actions to create and approve pull requests';
+
+  beforeEach(() => {
+    process.env.GITHUB_TOKEN = 'test-token';
+    mockInputs['create-pr'] = 'true';
+    writeReadme('# My Project\n');
+  });
+
+  it('names the permission and the repository setting GitHub requires of the token that opens the pull request', async () => {
+    await run();
+
+    // create-pr: true opens the pull request with the workflow's token, the call GitHub accepts from
+    // a token with pull-requests: write and, for GITHUB_TOKEN, only where that setting is on
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(github.getOctokit).toHaveBeenCalledWith('test-token');
+    expect(mockOctokit.rest.pulls.create).toHaveBeenCalledTimes(1);
+
+    const createPrParagraph = read('README.md')
+      .split(/\n{2,}/)
+      .find((block) => block.includes('set `create-pr: true`'));
+    expect(createPrParagraph).toContain('`pull-requests: write`');
+    expect(createPrParagraph).toContain(setting);
+    expect(read('docs/failed-runs.md')).toContain(setting);
+    for (const [file, text] of failedRunsTexts()) {
+      const statement = failedRunStatement(text, 'GitHub refuses the commit');
+      expect([file, statement]).toEqual([file, expect.stringContaining('`pull-requests: write`')]);
+    }
+  });
 });

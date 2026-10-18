@@ -325,6 +325,14 @@ describe('README.md', () => {
   });
 });
 
+describe('action.yml', () => {
+  it('runs the committed bundle, dist/index.js, on node24', () => {
+    const runs = actionYml().split(/^runs:\n/m)[1];
+    expect(runs).toMatch(/^ {2}using: 'node24'$/m);
+    expect(runs).toMatch(/^ {2}main: 'dist\/index\.js'$/m);
+  });
+});
+
 describe('the log outside a runner', () => {
   it('names each input action.yml declares by the INPUT_<NAME> variable getInput reads it from', () => {
     expect(INPUT_NAMES).toEqual(inputDefaults().map(([name]) => name));

@@ -66,7 +66,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 | `registry-url` | OpenA2A Registry API URL | `https://api.oa2a.org` |
 | `create-pr` | Create a PR instead of committing directly | `false` |
 | `auto-merge` | Auto-merge the PR (only when `create-pr: true`) | `true` |
-| `github-token` | GitHub token for commits/PRs if the `GITHUB_TOKEN` environment variable is unset; without either, the README is updated in the workspace only | |
+| `github-token` | GitHub token for commits/PRs if the `GITHUB_TOKEN` environment variable is unset; without either, the README is updated in the workspace only, with a warning | |
 
 `create-pr` and `auto-merge` accept `true`, `True`, `TRUE`, `false`, `False`, `FALSE`; any other value fails the run and names the input.
 
@@ -93,7 +93,7 @@ A package with no trust profile does not fail the run: the README is left as it 
 - The badge image's score or level differs from the lookup's; each run prints both and fails until the registry's image agrees.
 - `readme-path` resolves outside the repository checkout, `GITHUB_WORKSPACE`.
 
-The run also fails with no outputs set when GitHub refuses the commit or PR (protected branch, token without `contents: write`, README changed since checkout); only the workspace README changes.
+The run also fails with no outputs set when GitHub refuses the commit or PR (protected branch, token without `contents: write`, PR mode with a token without `pull-requests: write`, README changed since checkout); only the workspace README changes.
 
 For a failing status, the log quotes the registry's `error` text when it sends one. [Failed runs](docs/failed-runs.md) gives the retry timing, why a package name with `/` gets no badge and the `readme-path` failure message.
 
@@ -108,7 +108,7 @@ The action auto-places the badge after existing badges or the first heading, a m
 <!-- /opena2a-trust-badge -->
 ```
 
-If your default branch has protection rules, set `create-pr: true` to use PR mode with auto-merge.
+If your default branch has protection rules, set `create-pr: true` to use PR mode with auto-merge. With the workflow's `GITHUB_TOKEN`, PR mode needs `pull-requests: write` as well as `contents: write` in the `permissions:` block, since GitHub sets each permission the block does not list to `none`, and the repository setting "Allow GitHub Actions to create and approve pull requests" (Settings > Actions > General) turned on.
 
 ## License
 
