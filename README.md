@@ -87,6 +87,7 @@ A package with no trust profile does not fail the run: the README is left as it 
 - The registry answers with JSON that is not a trust profile (an object with `agentId`, `trustScore` and `trustLevel`).
 - The package name contains `/` (a scoped npm or `owner/repo` name) and the lookup returns no agent id in UUID form.
 - The badge image's score or level differs from the lookup's; each run prints both and fails until the registry's image agrees.
+- GitHub refuses the commit or PR (protected branch, token without `contents: write`, README changed since checkout); only the workspace README changes.
 
 For a failing status, the log quotes the registry's `error` text when it sends one. [Failed runs](docs/failed-runs.md) gives the retry timing and why a package name with `/` gets no badge.
 

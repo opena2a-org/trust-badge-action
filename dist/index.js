@@ -30277,7 +30277,8 @@ async function run() {
         }
         fs.writeFileSync(resolvedReadmePath, updatedContent, 'utf-8');
         core.info('README updated with trust badge.');
-        // Step 5: Commit to the branch the run is for, or open a PR into it
+        // Step 5: Commit to the branch the run is for, or open a PR into it. A write GitHub refuses
+        // throws, so the run fails with no outputs set.
         const token = process.env.GITHUB_TOKEN || core.getInput('github-token');
         const branch = runBranch();
         if (!token) {
@@ -30486,8 +30487,10 @@ async function createPullRequest(token, readmePath, trustData, badge, autoMerge,
         }
     }
     catch (error) {
+        // tryAutoMerge logs a refused merge itself, so what reaches here is a step of opening the PR.
+        // Rethrown, it fails the run before run() sets any output.
         const message = error instanceof Error ? error.message : String(error);
-        core.warning(`Failed to create PR: ${message}. README was updated locally.`);
+        throw new Error(`Failed to open the pull request into ${baseBranch}: ${message}. The README was updated in the workspace only.`);
     }
 }
 async function tryAutoMerge(octokit, owner, repo, prNumber, prUrl) {
@@ -30563,8 +30566,9 @@ async function commitDirectly(token, readmePath, content, branch) {
         core.info(`Changes committed directly to branch ${branch}.`);
     }
     catch (error) {
+        // Rethrown, a refused write fails the run before run() sets any output
         const message = error instanceof Error ? error.message : String(error);
-        core.warning(`Failed to commit directly: ${message}. README was updated locally.`);
+        throw new Error(`Failed to commit the README to branch ${branch}: ${message}. The README was updated in the workspace only.`);
     }
 }
 
