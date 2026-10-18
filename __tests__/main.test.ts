@@ -953,3 +953,67 @@ describe('run', () => {
     });
   });
 });
+
+// The README's Failed Runs section and docs/failed-runs.md, the two texts that list the cases that
+// fail the run.
+function failedRunsTexts(): Array<[string, string]> {
+  const read = (file: string): string => fs.readFileSync(path.join(__dirname, '..', file), 'utf-8');
+  return [
+    ['README.md', read('README.md').split(/^## Failed Runs$/m)[1].split(/^## /m)[0]],
+    ['docs/failed-runs.md', read('docs/failed-runs.md')],
+  ];
+}
+
+// What a Failed Runs text says of the case on its line that holds needle: that line, after the
+// paragraph that opens its list when the line is a list item.
+function failedRunStatement(text: string, needle: string): string {
+  const lines = text.split('\n');
+  const at = lines.findIndex((line) => line.includes(needle));
+  if (at === -1 || !lines[at].startsWith('- ')) {
+    return lines[at] ?? '';
+  }
+  let lead = at - 1;
+  while (lead >= 0 && (lines[lead].startsWith('- ') || lines[lead].trim() === '')) {
+    lead -= 1;
+  }
+  return `${lines[lead] ?? ''} ${lines[at]}`;
+}
+
+describe('the Failed Runs text', () => {
+  beforeEach(() => {
+    process.env.GITHUB_TOKEN = 'test-token';
+    writeReadme('# My Project\n');
+    // The README write GitHub refuses: the commit to the branch the run is for, or with create-pr
+    // the commit to the badge branch
+    mockOctokit.rest.repos.createOrUpdateFileContents.mockRejectedValue(
+      new Error('Resource not accessible by integration')
+    );
+  });
+
+  it.each(['false', 'true'])(
+    'says the README changes in the workspace, not that it is unchanged, when GitHub refuses the write with create-pr: %s',
+    async (createPr) => {
+      mockInputs['create-pr'] = createPr;
+
+      await run();
+
+      // run() writes the badge into the workspace README before the write GitHub refuses
+      expect(core.setFailed).toHaveBeenCalledTimes(1);
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('The README was updated in the workspace only.')
+      );
+      expect(mockOutputs).toEqual({});
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+
+      for (const [file, text] of failedRunsTexts()) {
+        const statement = failedRunStatement(text, 'GitHub refuses the commit');
+        expect([file, statement]).toEqual([file, expect.stringContaining('no outputs set')]);
+        expect([file, statement]).toEqual([
+          file,
+          expect.stringMatching(/only the workspace README changes|updated in the workspace only/),
+        ]);
+        expect([file, statement]).toEqual([file, expect.not.stringContaining('README unchanged')]);
+      }
+    }
+  );
+});
