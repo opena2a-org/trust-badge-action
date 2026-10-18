@@ -74,13 +74,46 @@ const lookup: TrustLookupResponse = {
   profileUrl: `https://registry.opena2a.org/agents/${AGENT_ID}`,
 };
 
+// The text the registry's badge image shows for that lookup: the trust score times 100 with the
+// fraction dropped, 21, and the level.
+const AGREEING_TITLE = 'Trust: 21 | discovered';
+
 const originalFetch = global.fetch;
 const originalToken = process.env.GITHUB_TOKEN;
 let workDir: string;
 let readmePath: string;
 
-function mockLookup(response: TrustLookupResponse): void {
-  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => response });
+interface MockAnswer {
+  ok: boolean;
+  status: number;
+  statusText?: string;
+  text?: () => Promise<string>;
+}
+
+// A badge image as the registry serves it, its text in the title.
+function badgeSvg(title: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${title}"><title>${title}</title></svg>`;
+}
+
+function imageAnswer(svg: string): MockAnswer {
+  return { ok: true, status: 200, text: async () => svg };
+}
+
+// Answers the lookup with the response and a badge image with the image given, by default one
+// whose text agrees with the lookup above. Any other URL is not found.
+function mockLookup(
+  response: TrustLookupResponse,
+  image: MockAnswer = imageAnswer(badgeSvg(AGREEING_TITLE))
+): void {
+  global.fetch = jest.fn().mockImplementation(async (url: string) => {
+    if (url.includes('/v1/trust/lookup?')) {
+      return { ok: true, status: 200, json: async () => response };
+    }
+    if (url.endsWith('/badge.svg')) {
+      return image;
+    }
+    return { ok: false, status: 404, statusText: 'Not Found' };
+  });
 }
 
 function writeReadme(content: string): void {
@@ -228,6 +261,105 @@ describe('run', () => {
 
     expect(readReadme()).toBe('# My Project\n');
     expect(mockOutputs).toEqual({ updated: 'false' });
+  });
+
+  describe('when the badge image does not show the lookup', () => {
+    const before = '# My Project\n\nDescription.\n';
+
+    beforeEach(() => {
+      process.env.GITHUB_TOKEN = 'test-token';
+      writeReadme(before);
+    });
+
+    function expectNothingWritten(): void {
+      expect(fs.readFileSync(readmePath)).toEqual(Buffer.from(before, 'utf-8'));
+      expect(mockOutputs).toEqual({});
+      expect(github.getOctokit).not.toHaveBeenCalled();
+    }
+
+    it('fails naming both verdicts and both URLs, and writes nothing, when the image shows another score', async () => {
+      mockLookup(lookup, imageAnswer(badgeSvg('Trust: 25 | discovered')));
+
+      await run();
+
+      expect(global.fetch).toHaveBeenCalledWith(IMAGE_URL, expect.objectContaining({ method: 'GET' }));
+      expect(core.setFailed).toHaveBeenCalledTimes(1);
+      expect(core.setFailed).toHaveBeenCalledWith(
+        `Action failed: The registry's badge image for hackmyagent reads "Trust: 25 | discovered" (${IMAGE_URL}) while its lookup returns score 0.21666666666666667, level discovered (${LINK_URL}). The badge was not written: the image and the lookup must agree before the action publishes it.`
+      );
+      expectNothingWritten();
+    });
+
+    it("fails when the image shows the lookup's score with another level", async () => {
+      mockLookup(lookup, imageAnswer(badgeSvg('Trust: 21 | blocked')));
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledTimes(1);
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining(`reads "Trust: 21 | blocked" (${IMAGE_URL})`)
+      );
+      expectNothingWritten();
+    });
+
+    it.each([
+      ["the registry's not-found image", badgeSvg('Trust: not found'), 'reads "Trust: not found"'],
+      [
+        'an image with no title',
+        '<svg xmlns="http://www.w3.org/2000/svg"><text>Trust</text><text>21 | discovered</text></svg>',
+        'carries no title',
+      ],
+    ])('fails when the image text is not in the form "Trust: <score> | <level>": %s', async (_label, svg, verdict) => {
+      mockLookup(lookup, imageAnswer(svg));
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledTimes(1);
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `badge image for hackmyagent ${verdict} (${IMAGE_URL}) while its lookup returns score 0.21666666666666667, level discovered (${LINK_URL})`
+        )
+      );
+      expectNothingWritten();
+    });
+
+    it('fails naming the image URL, without a retry, when the image is not found', async () => {
+      mockLookup(lookup, { ok: false, status: 404, statusText: 'Not Found' });
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledTimes(1);
+      const [message] = (core.setFailed as jest.Mock).mock.calls[0];
+      expect(message).toContain(`status 404 for the badge image at ${IMAGE_URL}`);
+      expect(message).toContain('score 0.21666666666666667, level discovered');
+      expect(message).toContain(LINK_URL);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expectNothingWritten();
+    });
+
+    it('fails and sets no output when the README already has the badge', async () => {
+      const current = `# My Project\n${WRAPPED}\n\nDescription.\n`;
+      writeReadme(current);
+      mockLookup(lookup, imageAnswer(badgeSvg('Trust: 25 | discovered')));
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledTimes(1);
+      expect(readReadme()).toBe(current);
+      expect(mockOutputs).toEqual({});
+    });
+
+    it('quotes at most 80 characters of the image text, with no control character', async () => {
+      mockLookup(lookup, imageAnswer(badgeSvg(`Trust: 25 |\u0007 dis\u001b[0mcovered\r\n${'x'.repeat(100)}`)));
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledTimes(1);
+      const [message] = (core.setFailed as jest.Mock).mock.calls[0];
+      expect(message).toContain(`reads "Trust: 25 | dis[0mcovered${'x'.repeat(55)}" (${IMAGE_URL})`);
+      expect(message).not.toMatch(/[\u0000-\u001f\u007f]/);
+      expectNothingWritten();
+    });
   });
 
   describe('without create-pr', () => {

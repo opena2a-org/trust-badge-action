@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { AddressInfo } from 'net';
-import { lookupTrust, TrustLookupResponse, trustQuery } from '../src/registry';
+import { fetchBadgeText, lookupTrust, TrustLookupResponse, trustQuery } from '../src/registry';
 
 // Save original fetch
 const originalFetch = global.fetch;
@@ -383,5 +383,72 @@ describe('lookupTrust', () => {
       ).resolves.toBeNull();
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('fetchBadgeText', () => {
+  const imageUrl = 'https://api.oa2a.org/v1/trust/e3b58711-0f97-441c-8a83-4b1b5342a39f/badge.svg';
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><title>Trust: 21 | discovered</title></svg>';
+  const image = () => new Response(svg, { status: 200, headers: { 'Content-Type': 'image/svg+xml' } });
+  const timeout = Object.assign(new Error('The operation was aborted due to timeout'), {
+    name: 'TimeoutError',
+  });
+
+  it('returns the body of a 200 answer as text, asking for an SVG image', async () => {
+    global.fetch = jest.fn().mockResolvedValue(image());
+
+    await expect(fetchBadgeText(imageUrl)).resolves.toBe(svg);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      imageUrl,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Accept: 'image/svg+xml' }),
+      })
+    );
+  });
+
+  it.each([429, 500, 503])('retries a %s and returns the next answer', async (status) => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status, statusText: 'Unavailable' })
+      .mockResolvedValueOnce(image());
+
+    await expect(fetchBadgeText(imageUrl, { retryDelayMs: 0 })).resolves.toBe(svg);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a request that timed out and returns the next answer', async () => {
+    global.fetch = jest.fn().mockRejectedValueOnce(timeout).mockResolvedValueOnce(image());
+
+    await expect(fetchBadgeText(imageUrl, { retryDelayMs: 0 })).resolves.toBe(svg);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails after the last of three attempts with a message naming the image URL', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable' });
+
+    await expect(fetchBadgeText(imageUrl, { retryDelayMs: 0 })).rejects.toThrow(
+      `Registry returned status 503 for the badge image at ${imageUrl}`
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('names the image URL when every attempt times out', async () => {
+    global.fetch = jest.fn().mockRejectedValue(timeout);
+
+    await expect(fetchBadgeText(imageUrl, { retryDelayMs: 0 })).rejects.toThrow(
+      `Failed to fetch the badge image at ${imageUrl}: The operation was aborted due to timeout`
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects a 404 at once rather than reading it as a package with no profile', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+
+    await expect(fetchBadgeText(imageUrl, { retryDelayMs: 0 })).rejects.toThrow(
+      `Registry returned status 404 for the badge image at ${imageUrl}`
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

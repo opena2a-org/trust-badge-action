@@ -2,13 +2,14 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import * as fs from 'fs';
 import * as path from 'path';
-import { TrustLookupResponse, lookupTrust } from './registry';
+import { TrustLookupResponse, fetchBadgeText, lookupTrust, trustLookupUrl } from './registry';
 import { updateBadge } from './readme';
 import { detectPackageName } from './detect';
 import { TrustBadge, badgeMarkdown, resolveBadge } from './badge';
 
 /**
- * Run the action: look up the package, write its trust badge into the README, and set the outputs.
+ * Run the action: look up the package, check that its badge image shows the lookup's score and
+ * level, write the badge into the README, and set the outputs.
  */
 export async function run(): Promise<void> {
   try {
@@ -49,8 +50,14 @@ export async function run(): Promise<void> {
       `Found trust profile: score=${trustData.trustScore}, level=${trustData.trustLevel}`
     );
 
-    // Step 3: Generate badge markdown
+    // Step 3: Generate badge markdown, and stop unless the image shows what the lookup returned
     const badge = resolveBadge(registryUrl, packageName, packageSource, trustData);
+    await checkBadgeImage(
+      badge,
+      trustData,
+      packageName,
+      trustLookupUrl(registryUrl, packageName, packageSource)
+    );
 
     // Step 4: Read and update README
     const resolvedReadmePath = path.resolve(readmePath);
@@ -105,6 +112,59 @@ export async function run(): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     core.setFailed(`Action failed: ${message}`);
   }
+}
+
+// The registry writes the badge image's text into its title as "Trust: <score> | <level>", the
+// score being the trust score times 100 with the fraction dropped.
+const IMAGE_TITLE = /<title\b[^>]*>([^<]*)<\/title>/i;
+const TRUST_TEXT = /^Trust: (\d+) \| (.+)$/;
+
+/**
+ * Fetch the badge image and throw unless its text shows the score and level of the lookup, so the
+ * README never gets an image that disagrees with the values the run reports. An image that cannot
+ * be fetched, or whose text is not in that form, throws as well.
+ */
+async function checkBadgeImage(
+  badge: TrustBadge,
+  trustData: TrustLookupResponse,
+  packageName: string,
+  lookupUrl: string
+): Promise<void> {
+  const lookupVerdict = `its lookup returns score ${trustData.trustScore}, level ${trustData.trustLevel} (${lookupUrl})`;
+  const notWritten =
+    'The badge was not written: the image and the lookup must agree before the action publishes it.';
+
+  let svg: string;
+  try {
+    svg = await fetchBadgeText(badge.imageUrl);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `The registry's badge image for ${packageName} could not be read (${message}) while ${lookupVerdict}. ${notWritten}`
+    );
+  }
+
+  const title = IMAGE_TITLE.exec(svg)?.[1].trim();
+  const shown = title === undefined ? null : TRUST_TEXT.exec(title);
+  if (
+    shown &&
+    Number(shown[1]) === Math.trunc(trustData.trustScore * 100) &&
+    shown[2] === trustData.trustLevel
+  ) {
+    return;
+  }
+  const imageVerdict = title === undefined ? 'carries no title' : `reads "${quotable(title)}"`;
+  throw new Error(
+    `The registry's badge image for ${packageName} ${imageVerdict} (${badge.imageUrl}) while ${lookupVerdict}. ${notWritten}`
+  );
+}
+
+// Text from the registry as the log quotes it: no control or format character and no line or
+// paragraph separator, cut to 80 characters.
+function quotable(text: string): string {
+  return Array.from(text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ''))
+    .slice(0, 80)
+    .join('');
 }
 
 // profile-url is the page the badge links to. The lookup's own profileUrl names a host with no DNS
