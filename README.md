@@ -56,6 +56,10 @@ The action reads the package name from the first of `package.json`, `pyproject.t
           registry-url: https://api.oa2a.org
 ```
 
+## Trust Score
+
+The trust score and level come from the OpenA2A Registry: the action reads both from the registry's trust lookup for the package and computes neither. The lookup gives the score as a number from 0 to 1, and the badge shows it from 0 to 100 with the fraction dropped: a score of 0.2166 shows as 21. The level is one of discovered, scanned, claimed, verified and certified, or blocked for a package the registry has blocked. The lookup answer the badge links to holds the registry's scan results for the package in `scanSummary`: its `status` is `not_scanned` for a package the registry has not scanned, and otherwise gives the outcome of the last scan, such as `clean`, `passed` or `warnings`, with the date of that scan in `lastScannedAt`.
+
 ## Inputs
 
 | Input | Description | Default |

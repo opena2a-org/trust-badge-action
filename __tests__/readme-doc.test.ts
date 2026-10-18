@@ -143,6 +143,36 @@ describe('README.md', () => {
     );
   });
 
+  it('says in a Trust Score section where the score and level come from, the scale and the levels', () => {
+    const section = readme()
+      .split(/^## /m)
+      .find((part) => part.startsWith('Trust Score\n'));
+    expect(section).toBeDefined();
+    const text = section as string;
+    expect(text).toContain('come from the OpenA2A Registry');
+    expect(text).toContain('computes neither');
+    expect(text).toContain('from 0 to 1');
+    expect(text).toContain('from 0 to 100 with the fraction dropped');
+
+    // The example follows the rule the run checks the badge image against: the lookup's score times
+    // 100 with the fraction dropped
+    const example = /a score of (0\.\d+) shows as (\d+)/.exec(text);
+    expect(example).not.toBeNull();
+    const [, score, shown] = example as RegExpExecArray;
+    expect(Math.trunc(Number(score) * 100)).toBe(Number(shown));
+
+    // The levels the outputs table names
+    const row = readme().split('\n').find((line) => line.startsWith('| `trust-level` |')) as string;
+    for (const level of ['discovered', 'scanned', 'claimed', 'verified', 'certified', 'blocked']) {
+      expect([level, row.includes(level), text.includes(level)]).toEqual([level, true, true]);
+    }
+
+    // Where the lookup answer the badge links to says whether and when the registry scanned the package
+    expect(text).toContain('`scanSummary`');
+    expect(text).toContain('`not_scanned`');
+    expect(text).toContain('`lastScannedAt`');
+  });
+
   it('links the page that lists the documented behaviour the v1 tag does not have', () => {
     expect(readme()).toMatch(/uses: +opena2a-org\/trust-badge-action@v1\n/);
     expect(readme()).toContain('](docs/v1-tag.md)');
