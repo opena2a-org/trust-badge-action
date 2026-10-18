@@ -80,6 +80,7 @@ const AGREEING_TITLE = 'Trust: 21 | discovered';
 
 const originalFetch = global.fetch;
 const originalToken = process.env.GITHUB_TOKEN;
+const originalWorkspace = process.env.GITHUB_WORKSPACE;
 let workDir: string;
 let readmePath: string;
 
@@ -130,9 +131,10 @@ beforeEach(() => {
   for (const key of Object.keys(mockOutputs)) delete mockOutputs[key];
   delete process.env.GITHUB_TOKEN;
 
+  // The runner's checkout, named by GITHUB_WORKSPACE; readme-path defaults to README.md in it
   workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trust-badge-'));
   readmePath = path.join(workDir, 'README.md');
-  mockInputs['readme-path'] = readmePath;
+  process.env.GITHUB_WORKSPACE = workDir;
   mockInputs['package-name'] = 'hackmyagent';
   mockInputs['package-source'] = 'npm';
   mockLookup(lookup);
@@ -159,6 +161,11 @@ afterEach(() => {
     delete process.env.GITHUB_TOKEN;
   } else {
     process.env.GITHUB_TOKEN = originalToken;
+  }
+  if (originalWorkspace === undefined) {
+    delete process.env.GITHUB_WORKSPACE;
+  } else {
+    process.env.GITHUB_WORKSPACE = originalWorkspace;
   }
   fs.rmSync(workDir, { recursive: true, force: true });
 });
@@ -362,6 +369,142 @@ describe('run', () => {
     });
   });
 
+  describe('readme-path', () => {
+    // A README in a directory next to the workspace, with the readme-path that names it from the
+    // workspace. The test that makes it removes it.
+    function outsideReadme(): { file: string; input: string; remove: () => void } {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trust-badge-outside-'));
+      const file = path.join(dir, 'README.md');
+      fs.writeFileSync(file, '# Outside\n', 'utf-8');
+      return {
+        file,
+        input: path.relative(workDir, file),
+        remove: () => fs.rmSync(dir, { recursive: true, force: true }),
+      };
+    }
+
+    it('resolves the default README.md against the process directory when GITHUB_WORKSPACE is unset', async () => {
+      delete process.env.GITHUB_WORKSPACE;
+      mockInputs['github-token'] = 'test-token';
+      writeReadme('# My Project\n');
+      const cwd = jest.spyOn(process, 'cwd').mockReturnValue(workDir);
+
+      try {
+        await run();
+      } finally {
+        cwd.mockRestore();
+      }
+
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({ path: 'README.md' })
+      );
+    });
+
+    it('commits an absolute readme-path inside the workspace under its path in the repository', async () => {
+      const docsReadme = path.join(workDir, 'docs', 'README.md');
+      fs.mkdirSync(path.dirname(docsReadme));
+      fs.writeFileSync(docsReadme, '# Docs\n', 'utf-8');
+      mockInputs['readme-path'] = docsReadme;
+      mockInputs['github-token'] = 'test-token';
+
+      await run();
+
+      expect(fs.readFileSync(docsReadme, 'utf-8')).toBe(`# Docs\n${WRAPPED}\n`);
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith(
+        expect.objectContaining({ path: 'docs/README.md', ref: RUN_SHA })
+      );
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({ path: 'docs/README.md', branch: 'main' })
+      );
+      expect(mockOutputs.updated).toBe('true');
+    });
+
+    it('sends the path relative to the workspace in the pull request commit too', async () => {
+      fs.mkdirSync(path.join(workDir, 'docs'));
+      fs.writeFileSync(path.join(workDir, 'docs', 'README.md'), '# Docs\n', 'utf-8');
+      mockInputs['readme-path'] = 'docs/README.md';
+      mockInputs['create-pr'] = 'true';
+      process.env.GITHUB_TOKEN = 'test-token';
+
+      await run();
+
+      expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith(
+        expect.objectContaining({ path: 'docs/README.md', ref: 'opena2a/update-trust-badge' })
+      );
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: 'docs/README.md',
+          branch: 'opena2a/update-trust-badge',
+          content: Buffer.from(`# Docs\n${WRAPPED}\n`).toString('base64'),
+        })
+      );
+      expect(mockOutputs.updated).toBe('true');
+    });
+
+    it('sends the normalised path for a readme-path whose .. stays inside the workspace', async () => {
+      fs.mkdirSync(path.join(workDir, 'docs'));
+      mockInputs['readme-path'] = 'docs/../README.md';
+      mockInputs['github-token'] = 'test-token';
+      writeReadme('# My Project\n');
+
+      await run();
+
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
+        expect.objectContaining({ path: 'README.md' })
+      );
+    });
+
+    it.each([
+      ['a relative readme-path', (outside: { file: string; input: string }) => outside.input],
+      ['an absolute readme-path', (outside: { file: string; input: string }) => outside.file],
+    ])('fails the run, writes nothing and sets no output for %s that resolves outside the workspace', async (_label, input) => {
+      const outside = outsideReadme();
+      mockInputs['readme-path'] = input(outside);
+      mockInputs['github-token'] = 'test-token';
+      writeReadme('# My Project\n');
+
+      try {
+        await run();
+
+        expect(core.setFailed).toHaveBeenCalledWith(
+          `Action failed: readme-path ${input(outside)} resolves outside the workspace ${workDir}. Give a path inside the repository.`
+        );
+        expect(fs.readFileSync(outside.file, 'utf-8')).toBe('# Outside\n');
+        expect(readReadme()).toBe('# My Project\n');
+        expect(mockOutputs).toEqual({});
+        expect(github.getOctokit).not.toHaveBeenCalled();
+        expect(core.warning).not.toHaveBeenCalled();
+      } finally {
+        outside.remove();
+      }
+    });
+
+    it('fails for a readme-path outside the workspace that names no file, before the file check', async () => {
+      mockInputs['readme-path'] = '../missing/README.md';
+      writeReadme('# My Project\n');
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        `Action failed: readme-path ../missing/README.md resolves outside the workspace ${workDir}. Give a path inside the repository.`
+      );
+      expect(core.warning).not.toHaveBeenCalled();
+      expect(mockOutputs).toEqual({});
+    });
+
+    it('warns and reports no update for a readme-path inside the workspace that names no file', async () => {
+      mockInputs['readme-path'] = 'docs/README.md';
+
+      await run();
+
+      expect(core.warning).toHaveBeenCalledWith('README not found at docs/README.md. Skipping badge update.');
+      expect(core.setFailed).not.toHaveBeenCalled();
+      expect(mockOutputs).toEqual({ updated: 'false' });
+    });
+  });
+
   describe('without create-pr', () => {
     beforeEach(() => {
       mockInputs['github-token'] = 'test-token';
@@ -379,13 +522,13 @@ describe('run', () => {
       expect(mockOctokit.rest.repos.getContent).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
-        path: readmePath,
+        path: 'README.md',
         ref: RUN_SHA,
       });
       expect(mockOctokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith({
         owner: 'test-owner',
         repo: 'test-repo',
-        path: readmePath,
+        path: 'README.md',
         message: 'Update OpenA2A trust badge',
         content: Buffer.from(`# My Project\n${WRAPPED}\n`).toString('base64'),
         branch: 'main',

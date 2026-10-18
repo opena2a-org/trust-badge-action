@@ -6,7 +6,7 @@ branding:
 
 inputs:
   readme-path:
-    description: 'Path to README file'
+    description: 'Path to the README file, relative to the repository root'
     required: false
     default: 'README.md'
   package-name:

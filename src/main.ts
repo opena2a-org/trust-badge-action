@@ -60,15 +60,23 @@ export async function run(): Promise<void> {
       trustLookupUrl(registryUrl, packageName, packageSource)
     );
 
-    // Step 4: Read and update README
-    const resolvedReadmePath = path.resolve(readmePath);
-    if (!fs.existsSync(resolvedReadmePath)) {
+    // Step 4: Read and update README. readme-path is resolved against the workspace, the checkout
+    // the run is for, and its path relative to the workspace is the README's path in the repository.
+    const workspace = path.resolve(process.env.GITHUB_WORKSPACE || process.cwd());
+    const readmeFile = path.resolve(workspace, readmePath);
+    const repoPath = repositoryPath(workspace, readmeFile);
+    if (repoPath === undefined) {
+      throw new Error(
+        `readme-path ${readmePath} resolves outside the workspace ${workspace}. Give a path inside the repository.`
+      );
+    }
+    if (!fs.existsSync(readmeFile)) {
       core.warning(`README not found at ${readmePath}. Skipping badge update.`);
       core.setOutput('updated', 'false');
       return;
     }
 
-    const readmeContent = fs.readFileSync(resolvedReadmePath, 'utf-8');
+    const readmeContent = fs.readFileSync(readmeFile, 'utf-8');
     const updatedContent = updateBadge(readmeContent, badgeMarkdown(badge), {
       packageName,
       agentId: trustData.agentId,
@@ -82,7 +90,7 @@ export async function run(): Promise<void> {
       return;
     }
 
-    fs.writeFileSync(resolvedReadmePath, updatedContent, 'utf-8');
+    fs.writeFileSync(readmeFile, updatedContent, 'utf-8');
     core.info('README updated with trust badge.');
 
     // Step 5: Commit to the branch the run is for, or open a PR into it. A write GitHub refuses
@@ -102,9 +110,9 @@ export async function run(): Promise<void> {
         `The run is for ${github.context.ref}, a merge queue branch, so the README was updated locally but not committed.`
       );
     } else if (createPr) {
-      await createPullRequest(token, readmePath, trustData, badge, autoMerge, branch);
+      await createPullRequest(token, repoPath, updatedContent, trustData, badge, autoMerge, branch);
     } else {
-      await commitDirectly(token, readmePath, updatedContent, branch);
+      await commitDirectly(token, repoPath, updatedContent, branch);
     }
 
     // Step 6: Set outputs
@@ -211,11 +219,24 @@ function runBranch(): string | undefined {
   return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : undefined;
 }
 
+// The path of a file in the workspace as the repository names it: relative to the workspace, with
+// / separators whatever the platform's own. Undefined for a file outside the workspace, which no
+// repository path names.
+function repositoryPath(workspace: string, file: string): string | undefined {
+  const relative = path.relative(workspace, file);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return undefined;
+  }
+  return relative.split(path.sep).join('/');
+}
+
 // Opens a PR into the run's branch from a PR branch that starts at the commit the run checked out,
-// the commit whose README the badge was added to.
+// the commit whose README the badge was added to. repoPath is the README's path in the repository
+// and content is the README with the badge in it.
 async function createPullRequest(
   token: string,
-  readmePath: string,
+  repoPath: string,
+  content: string,
   trustData: TrustLookupResponse,
   badge: TrustBadge,
   autoMerge: boolean,
@@ -254,16 +275,13 @@ async function createPullRequest(
       });
     }
 
-    // Read the updated file content
-    const updatedContent = fs.readFileSync(path.resolve(readmePath), 'utf-8');
-
     // Get the current file SHA (if it exists on the branch)
     let fileSha: string | undefined;
     try {
       const { data: fileData } = await octokit.rest.repos.getContent({
         owner,
         repo,
-        path: readmePath,
+        path: repoPath,
         ref: branchName,
       });
       if (!Array.isArray(fileData) && fileData.type === 'file') {
@@ -277,9 +295,9 @@ async function createPullRequest(
     await octokit.rest.repos.createOrUpdateFileContents({
       owner,
       repo,
-      path: readmePath,
+      path: repoPath,
       message: 'Update OpenA2A trust badge',
-      content: Buffer.from(updatedContent).toString('base64'),
+      content: Buffer.from(content).toString('base64'),
       branch: branchName,
       sha: fileSha,
     });
@@ -393,9 +411,10 @@ async function tryAutoMerge(
   }
 }
 
+// Commits content to repoPath, the README's path in the repository, on the run's branch.
 async function commitDirectly(
   token: string,
-  readmePath: string,
+  repoPath: string,
   content: string,
   branch: string
 ): Promise<void> {
@@ -410,7 +429,7 @@ async function commitDirectly(
       const { data: fileData } = await octokit.rest.repos.getContent({
         owner,
         repo,
-        path: readmePath,
+        path: repoPath,
         ref: github.context.sha,
       });
       if (!Array.isArray(fileData) && fileData.type === 'file') {
@@ -423,7 +442,7 @@ async function commitDirectly(
     await octokit.rest.repos.createOrUpdateFileContents({
       owner,
       repo,
-      path: readmePath,
+      path: repoPath,
       message: 'Update OpenA2A trust badge',
       content: Buffer.from(content).toString('base64'),
       branch,

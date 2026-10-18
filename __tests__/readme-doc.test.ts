@@ -244,6 +244,20 @@ describe('README.md', () => {
     expect(tagColumn).toContain('the pull request goes into the default branch');
   });
 
+  it('says in the v1 tag page that readme-path is resolved against the workspace', () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const row = page.split('\n').find((line) => line.startsWith('| `readme-path` is resolved against the workspace'));
+    expect(row).toBeDefined();
+    const [, readmeColumn, tagColumn] = (row as string).split('|');
+    expect(readmeColumn).toContain('`GITHUB_WORKSPACE`');
+    expect(readmeColumn).toContain('resolves outside it fails the run');
+    expect(readmeColumn).toContain('relative to the workspace');
+    expect(tagColumn).toContain('process working directory with no workspace check');
+    expect(tagColumn).toContain('sent as the repository path');
+    expect(readme()).toContain('| `readme-path` | Path to the README file, relative to the repository root;');
+    expect(readme()).toContain('- `readme-path` resolves outside the repository checkout, `GITHUB_WORKSPACE`.');
+  });
+
   it('says in the v1 tag page that a github-token value is read though v1 does not declare the input', () => {
     const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
     const row = page.split('\n').find((line) => line.startsWith('| A `github-token` input |'));
