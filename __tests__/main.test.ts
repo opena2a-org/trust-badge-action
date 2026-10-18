@@ -52,6 +52,9 @@ jest.mock('@actions/github', () => ({
 const RUN_SHA = 'run-commit-sha';
 const README_SHA_AT_RUN = 'readme-blob-sha-at-run';
 
+// The ref of a merge_group run: the merge queue's branch for pull request 7 into main.
+const MERGE_QUEUE_REF = 'refs/heads/gh-readonly-queue/main/pr-7-0123abc';
+
 function runOn(ref: string): void {
   Object.assign(github.context, { ref, sha: RUN_SHA });
 }
@@ -312,6 +315,20 @@ describe('run', () => {
         expect(mockOutputs.updated).toBe('true');
       }
     );
+
+    it('commits nothing to the merge queue branch of a merge queue run', async () => {
+      runOn(MERGE_QUEUE_REF);
+
+      await run();
+
+      expect(github.getOctokit).not.toHaveBeenCalled();
+      expect(mockOctokit.rest.repos.createOrUpdateFileContents).not.toHaveBeenCalled();
+      expect(core.warning).toHaveBeenCalledWith(
+        `The run is for ${MERGE_QUEUE_REF}, a merge queue branch, so the README was updated locally but not committed.`
+      );
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+      expect(mockOutputs.updated).toBe('true');
+    });
   });
 
   describe('with create-pr', () => {
@@ -438,6 +455,22 @@ describe('run', () => {
       expect(core.warning).toHaveBeenCalledWith(
         'The run is for refs/pull/7/merge, which is not a branch, so the README was updated locally but not committed.'
       );
+    });
+
+    it('creates no badge branch and opens no pull request for a merge queue run', async () => {
+      runOn(MERGE_QUEUE_REF);
+
+      await run();
+
+      expect(github.getOctokit).not.toHaveBeenCalled();
+      expect(mockOctokit.rest.git.createRef).not.toHaveBeenCalled();
+      expect(mockOctokit.rest.git.updateRef).not.toHaveBeenCalled();
+      expect(mockOctokit.rest.pulls.create).not.toHaveBeenCalled();
+      expect(core.warning).toHaveBeenCalledWith(
+        `The run is for ${MERGE_QUEUE_REF}, a merge queue branch, so the README was updated locally but not committed.`
+      );
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+      expect(mockOutputs.updated).toBe('true');
     });
 
     it('does not merge when auto-merge is false', async () => {
