@@ -174,6 +174,45 @@ describe('README.md', () => {
     }
   });
 
+  it('says in the v1 tag page which pyproject.toml table the name is read from', () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const row = page
+      .split('\n')
+      .find((line) => line.startsWith('| The `pyproject.toml` name is the `name` key of the `[project]` table'));
+    expect(row).toBeDefined();
+    const [, readmeColumn, tagColumn] = (row as string).split('|');
+    expect(readmeColumn).toContain('or of `[tool.poetry]` when there is no `[project]` name');
+    expect(readmeColumn).toContain('such as `[[tool.uv.index]]`, is not read, and neither is a line inside a multi-line string');
+    expect(tagColumn).toContain('whatever table it is in and inside a multi-line string too');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'readme-doc-'));
+    const detect = (content: string): string | null => {
+      fs.writeFileSync(path.join(dir, 'pyproject.toml'), content);
+      return detectPackageName(dir);
+    };
+    try {
+      expect(detect('[[tool.uv.index]]\nname = "pytorch"\n\n[project]\nname = "my-pkg"\n')).toBe('my-pkg');
+      expect(
+        detect('[tool.poetry]\nname = "poetry-pkg"\n\n[project]\nversion = "1"\n\n[[tool.uv.index]]\nname = "pytorch"\n')
+      ).toBe('poetry-pkg');
+      expect(detect('[project]\ndescription = """\nname = "inner"\n"""\nname = "my-pkg"\n')).toBe('my-pkg');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says in the v1 tag page which branch the README is committed to', () => {
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const row = page.split('\n').find((line) => line.startsWith('| The README is committed to the branch the run is for'));
+    expect(row).toBeDefined();
+    const [, readmeColumn, tagColumn] = (row as string).split('|');
+    expect(readmeColumn).toContain('in place of the README of the commit the run checked out');
+    expect(readmeColumn).toContain('`opena2a/update-trust-badge-<branch>` for a run on another branch');
+    expect(readmeColumn).toContain('a tag, a pull request merge ref or a merge queue branch commits nothing');
+    expect(tagColumn).toContain('committed to the default branch');
+    expect(tagColumn).toContain('the pull request goes into the default branch');
+  });
+
   it('says in the v1 tag page that a github-token value is read though v1 does not declare the input', () => {
     const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
     const row = page.split('\n').find((line) => line.startsWith('| A `github-token` input |'));

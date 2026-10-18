@@ -97,6 +97,47 @@ describe('detectPackageName', () => {
     expect(detectPackageName(tmpDir)).toBe('pep621-pkg');
   });
 
+  it.each([
+    [
+      'a [[tool.poetry.source]] name after a [tool.poetry] table with none',
+      '[tool.poetry]\npackage-mode = false\n\n[[tool.poetry.source]]\nname = "private"\nurl = "https://example.invalid/simple"\n',
+      null,
+    ],
+    [
+      'a [[tool.uv.index]] name after a [project] table with none',
+      '[tool.poetry]\nname = "real"\n\n[project]\nversion = "0.1.0"\n\n[[tool.uv.index]]\nname = "pytorch"\n',
+      'real',
+    ],
+    [
+      'a name in a table after [project] whose quoted header holds ]',
+      '[project]\nversion = "0.1.0"\n\n["weird]key"]\nname = "not-this"\n',
+      null,
+    ],
+  ])('ignores %s', (_label, content, expected) => {
+    fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), content);
+    expect(detectPackageName(tmpDir)).toBe(expected);
+  });
+
+  it.each([
+    ['a multi-line array holding a line like a table header', '[project]\nmatrix = [\n  [1, 2],\n  [3, 4]\n]\nname = "pkg"\n'],
+    ['a multi-line basic string holding a line like a table header', '[project]\ndescription = """\n[notes]\n"""\nname = "pkg"\n'],
+    ['a multi-line literal string holding a line like a table header', "[project]\ndescription = '''\n[notes]\n'''\nname = \"pkg\"\n"],
+    ['a multi-line array whose first line has a string holding ]', '[project]\nmatrix = ["]",\n  [3, 4]\n]\nname = "pkg"\n'],
+    ['a multi-line array whose first line has a comment holding ]', '[project]\nmatrix = [ # ]\n  [3, 4]\n]\nname = "pkg"\n'],
+    ['a multi-line array whose first line has an escaped quote before ]', '[project]\nmatrix = ["\\"]",\n  [3, 4]\n]\nname = "pkg"\n'],
+    ['an array holding a multi-line string that ends in a quote', '[project]\nkeywords = ["""a""""]\nname = "pkg"\n'],
+    ['a multi-line string holding a name line', '[project]\ndescription = """\nname = "inner"\n"""\nname = "pkg"\n'],
+    ['an inline table written over several lines', '[project]\nauthor = {\n  name = "A. Author",\n}\nname = "pkg"\n'],
+  ])('reads the [project] name after %s', (_label, content) => {
+    fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), content);
+    expect(detectPackageName(tmpDir)).toBe('pkg');
+  });
+
+  it('reads a pyproject.toml whose lines end in a lone CR', () => {
+    fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), '[tool.uv]\rname = "other"\r[project]\rname = "pkg"\r');
+    expect(detectPackageName(tmpDir)).toBe('pkg');
+  });
+
   it('returns null when no detection files exist', () => {
     expect(detectPackageName(tmpDir)).toBeNull();
   });

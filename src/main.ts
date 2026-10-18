@@ -86,6 +86,12 @@ export async function run(): Promise<void> {
       core.warning(
         `The run is for ${github.context.ref || 'no ref'}, which is not a branch, so the README was updated locally but not committed.`
       );
+    } else if (branch.startsWith('gh-readonly-queue/')) {
+      // A merge queue run is for the queue's own branch, gh-readonly-queue/<base>/pr-<n>-<sha>, not
+      // a branch to commit the badge to
+      core.warning(
+        `The run is for ${github.context.ref}, a merge queue branch, so the README was updated locally but not committed.`
+      );
     } else if (createPr) {
       await createPullRequest(token, readmePath, trustData, badge, autoMerge, branch);
     } else {
@@ -111,7 +117,7 @@ function setTrustOutputs(trustData: TrustLookupResponse, badge: TrustBadge): voi
 }
 
 // The branch the run is for. A run for a tag or a pull request merge ref has none, so there is no
-// branch to write its README to.
+// branch to write its README to. A merge queue run has one, which run() does not write to either.
 function runBranch(): string | undefined {
   const ref = github.context.ref || '';
   return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : undefined;

@@ -71,7 +71,8 @@ export function detectPackageName(dir?: string): string | null {
 
 /**
  * Read the `name` key of one table of a pyproject.toml, such as `project` or `tool.poetry`.
- * A `name` key in any other table, or before the first table header, is ignored.
+ * A `name` key in any other table, or before the first table header, is ignored, and a line
+ * inside a multi-line string, array or inline table is read as neither a key nor a table header.
  *
  * @param content - The pyproject.toml text
  * @param table - The dotted table name to read
@@ -79,15 +80,16 @@ export function detectPackageName(dir?: string): string | null {
  */
 function pyprojectTableName(content: string, table: string): string | null {
   let inTable = false;
-  for (const line of content.split(/\r?\n/)) {
-    // A table header, [table] or [[array.of.tables]], with an optional trailing comment
-    const header = line.match(/^\s*\[(\[?)([^\[\]]+)\]\1\s*(?:#.*)?$/);
-    if (header) {
-      const headerName = header[2]
-        .split('.')
+  for (const line of tomlLinesOutsideValues(content)) {
+    if (/^\s*\[/.test(line)) {
+      // A table header, [table] or [[array.of.tables]], with an optional trailing comment. A header
+      // this pattern does not read ends the table being read too.
+      const header = line.match(/^\s*(?:\[\[([^\[\]]+)\]\]|\[([^\[\]]+)\])\s*(?:#.*)?$/);
+      const headerName = header?.[2]
+        ?.split('.')
         .map((part) => part.trim().replace(/^"(.*)"$|^'(.*)'$/, '$1$2'))
         .join('.');
-      inTable = header[1] === '' && headerName === table;
+      inTable = headerName === table;
       continue;
     }
     if (!inTable) {
@@ -100,4 +102,51 @@ function pyprojectTableName(content: string, table: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Split TOML text into lines, leaving out each line that starts inside a value begun on an earlier
+ * line: the later lines of a multi-line string, array or inline table. A line ends at LF, CRLF or CR.
+ *
+ * @param content - The TOML text
+ * @returns The lines that start outside any value: keys, table headers, comments and blank lines.
+ */
+function tomlLinesOutsideValues(content: string): string[] {
+  const lines: string[] = [];
+  let quote = ''; // the delimiter of the string being read: ", ', """ or '''
+  let depth = 0; // the [ and { of arrays and inline tables not yet closed
+  for (const line of content.split(/\r\n|\r|\n/)) {
+    if (quote === '' && depth === 0) {
+      lines.push(line);
+    }
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (quote) {
+        if (char === '\\' && quote[0] === '"') {
+          i++; // a backslash escapes the next character of a basic string
+        } else if (line.startsWith(quote, i)) {
+          i += quote.length - 1;
+          // The run of quotes that closes a multi-line string can start with up to two quotes of
+          // the string's own, so the string ends after the whole run
+          while (quote.length === 3 && line[i + 1] === quote[0]) {
+            i++;
+          }
+          quote = '';
+        }
+      } else if (char === '#') {
+        break; // a comment runs to the end of the line
+      } else if (char === '"' || char === "'") {
+        quote = line.startsWith(char.repeat(3), i) ? char.repeat(3) : char;
+        i += quote.length - 1;
+      } else if (char === '[' || char === '{') {
+        depth++;
+      } else if ((char === ']' || char === '}') && depth > 0) {
+        depth--;
+      }
+    }
+    if (quote.length === 1) {
+      quote = ''; // a one-line string ends with its line
+    }
+  }
+  return lines;
 }
