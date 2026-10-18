@@ -30221,7 +30221,8 @@ const readme_1 = __nccwpck_require__(7553);
 const detect_1 = __nccwpck_require__(1052);
 const badge_1 = __nccwpck_require__(3120);
 /**
- * Run the action: look up the package, write its trust badge into the README, and set the outputs.
+ * Run the action: look up the package, check that its badge image shows the lookup's score and
+ * level, write the badge into the README, and set the outputs.
  */
 async function run() {
     try {
@@ -30251,8 +30252,9 @@ async function run() {
             return;
         }
         core.info(`Found trust profile: score=${trustData.trustScore}, level=${trustData.trustLevel}`);
-        // Step 3: Generate badge markdown
+        // Step 3: Generate badge markdown, and stop unless the image shows what the lookup returned
         const badge = (0, badge_1.resolveBadge)(registryUrl, packageName, packageSource, trustData);
+        await checkBadgeImage(badge, trustData, packageName, (0, registry_1.trustLookupUrl)(registryUrl, packageName, packageSource));
         // Step 4: Read and update README
         const resolvedReadmePath = path.resolve(readmePath);
         if (!fs.existsSync(resolvedReadmePath)) {
@@ -30302,6 +30304,43 @@ async function run() {
         const message = error instanceof Error ? error.message : String(error);
         core.setFailed(`Action failed: ${message}`);
     }
+}
+// The registry writes the badge image's text into its title as "Trust: <score> | <level>", the
+// score being the trust score times 100 with the fraction dropped.
+const IMAGE_TITLE = /<title\b[^>]*>([^<]*)<\/title>/i;
+const TRUST_TEXT = /^Trust: (\d+) \| (.+)$/;
+/**
+ * Fetch the badge image and throw unless its text shows the score and level of the lookup, so the
+ * README never gets an image that disagrees with the values the run reports. An image that cannot
+ * be fetched, or whose text is not in that form, throws as well.
+ */
+async function checkBadgeImage(badge, trustData, packageName, lookupUrl) {
+    const lookupVerdict = `its lookup returns score ${trustData.trustScore}, level ${trustData.trustLevel} (${lookupUrl})`;
+    const notWritten = 'The badge was not written: the image and the lookup must agree before the action publishes it.';
+    let svg;
+    try {
+        svg = await (0, registry_1.fetchBadgeText)(badge.imageUrl);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`The registry's badge image for ${packageName} could not be read (${message}) while ${lookupVerdict}. ${notWritten}`);
+    }
+    const title = IMAGE_TITLE.exec(svg)?.[1].trim();
+    const shown = title === undefined ? null : TRUST_TEXT.exec(title);
+    if (shown &&
+        Number(shown[1]) === Math.trunc(trustData.trustScore * 100) &&
+        shown[2] === trustData.trustLevel) {
+        return;
+    }
+    const imageVerdict = title === undefined ? 'carries no title' : `reads "${quotable(title)}"`;
+    throw new Error(`The registry's badge image for ${packageName} ${imageVerdict} (${badge.imageUrl}) while ${lookupVerdict}. ${notWritten}`);
+}
+// Text from the registry as the log quotes it: no control or format character and no line or
+// paragraph separator, cut to 80 characters.
+function quotable(text) {
+    return Array.from(text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ''))
+        .slice(0, 80)
+        .join('');
 }
 // profile-url is the page the badge links to. The lookup's own profileUrl names a host with no DNS
 // record, so it is not passed through.
@@ -31030,7 +31069,9 @@ function updateBadge(content, badgeMarkdown, owner) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.encodeUrlComponent = encodeUrlComponent;
 exports.trustQuery = trustQuery;
+exports.trustLookupUrl = trustLookupUrl;
 exports.lookupTrust = lookupTrust;
+exports.fetchBadgeText = fetchBadgeText;
 const DEFAULT_LOOKUP_OPTIONS = {
     attempts: 3,
     retryDelayMs: 2000,
@@ -31048,6 +31089,12 @@ function encodeUrlComponent(value) {
  */
 function trustQuery(packageName, source) {
     return `package=${encodeUrlComponent(packageName)}&source=${encodeUrlComponent(source)}`;
+}
+/**
+ * The registry's trust lookup URL for a package.
+ */
+function trustLookupUrl(registryUrl, packageName, source) {
+    return `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`;
 }
 // A failure that a later attempt can succeed past: no response or only part of one (network error
 // or timeout), a rate limit, or a server error.
@@ -31127,6 +31174,22 @@ async function registryErrorText(response) {
         return undefined;
     }
 }
+// Makes the request until it succeeds, fails with an error that is not transient, or has made
+// `attempts` attempts. The first retry waits retryDelayMs, each later one twice as long as the one
+// before it.
+async function withRetries(attempts, retryDelayMs, attemptOnce) {
+    for (let attempt = 1;; attempt++) {
+        try {
+            return await attemptOnce();
+        }
+        catch (error) {
+            if (!(error instanceof TransientLookupError) || attempt >= attempts) {
+                throw error;
+            }
+            await sleep(retryDelayMs * 2 ** (attempt - 1));
+        }
+    }
+}
 /**
  * Look up trust information for a package from the OpenA2A Registry.
  * Returns null if the package has no trust profile (404).
@@ -31137,18 +31200,8 @@ async function registryErrorText(response) {
  */
 async function lookupTrust(registryUrl, packageName, source, options = {}) {
     const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
-    const url = `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`;
-    for (let attempt = 1;; attempt++) {
-        try {
-            return await lookupOnce(url, registryUrl, timeoutMs);
-        }
-        catch (error) {
-            if (!(error instanceof TransientLookupError) || attempt >= attempts) {
-                throw error;
-            }
-            await sleep(retryDelayMs * 2 ** (attempt - 1));
-        }
-    }
+    const url = trustLookupUrl(registryUrl, packageName, source);
+    return withRetries(attempts, retryDelayMs, () => lookupOnce(url, registryUrl, timeoutMs));
 }
 async function lookupOnce(url, registryUrl, timeoutMs) {
     let response;
@@ -31200,6 +31253,46 @@ async function lookupOnce(url, registryUrl, timeoutMs) {
         throw new Error(`Registry at ${registryUrl} returned status ${response.status} with a JSON body that is not a trust profile: ${reason}.`);
     }
     return body;
+}
+/**
+ * Fetch the badge image at imageUrl and return its body as text.
+ * The attempts, the waits between them and the failures that are retried are the lookup's. Any
+ * status other than a success throws, 404 included: the lookup has just found the package, so an
+ * image that is not found is not a package with no trust profile.
+ */
+async function fetchBadgeText(imageUrl, options = {}) {
+    const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
+    return withRetries(attempts, retryDelayMs, () => fetchBadgeTextOnce(imageUrl, timeoutMs));
+}
+async function fetchBadgeTextOnce(imageUrl, timeoutMs) {
+    let response;
+    try {
+        response = await fetch(imageUrl, {
+            method: 'GET',
+            headers: {
+                Accept: 'image/svg+xml',
+                'User-Agent': 'opena2a-trust-badge-action/1.0',
+            },
+            signal: AbortSignal.timeout(timeoutMs),
+        });
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new TransientLookupError(`Failed to fetch the badge image at ${imageUrl}: ${message}`);
+    }
+    if (!response.ok) {
+        const message = `Registry returned status ${response.status} for the badge image at ${imageUrl}`;
+        throw response.status === 429 || response.status >= 500
+            ? new TransientLookupError(message)
+            : new Error(message);
+    }
+    try {
+        return await response.text();
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new TransientLookupError(`Failed to read the badge image at ${imageUrl}: ${message}`);
+    }
 }
 
 

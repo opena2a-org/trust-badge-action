@@ -41,6 +41,13 @@ export function trustQuery(packageName: string, source: string): string {
   return `package=${encodeUrlComponent(packageName)}&source=${encodeUrlComponent(source)}`;
 }
 
+/**
+ * The registry's trust lookup URL for a package.
+ */
+export function trustLookupUrl(registryUrl: string, packageName: string, source: string): string {
+  return `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`;
+}
+
 // A failure that a later attempt can succeed past: no response or only part of one (network error
 // or timeout), a rate limit, or a server error.
 class TransientLookupError extends Error {}
@@ -123,6 +130,26 @@ async function registryErrorText(response: Response): Promise<string | undefined
   }
 }
 
+// Makes the request until it succeeds, fails with an error that is not transient, or has made
+// `attempts` attempts. The first retry waits retryDelayMs, each later one twice as long as the one
+// before it.
+async function withRetries<T>(
+  attempts: number,
+  retryDelayMs: number,
+  attemptOnce: () => Promise<T>
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await attemptOnce();
+    } catch (error) {
+      if (!(error instanceof TransientLookupError) || attempt >= attempts) {
+        throw error;
+      }
+      await sleep(retryDelayMs * 2 ** (attempt - 1));
+    }
+  }
+}
+
 /**
  * Look up trust information for a package from the OpenA2A Registry.
  * Returns null if the package has no trust profile (404).
@@ -138,18 +165,8 @@ export async function lookupTrust(
   options: LookupOptions = {}
 ): Promise<TrustLookupResponse | null> {
   const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
-  const url = `${registryUrl}/v1/trust/lookup?${trustQuery(packageName, source)}`;
-
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await lookupOnce(url, registryUrl, timeoutMs);
-    } catch (error) {
-      if (!(error instanceof TransientLookupError) || attempt >= attempts) {
-        throw error;
-      }
-      await sleep(retryDelayMs * 2 ** (attempt - 1));
-    }
-  }
+  const url = trustLookupUrl(registryUrl, packageName, source);
+  return withRetries(attempts, retryDelayMs, () => lookupOnce(url, registryUrl, timeoutMs));
 }
 
 async function lookupOnce(
@@ -214,4 +231,46 @@ async function lookupOnce(
     );
   }
   return body as TrustLookupResponse;
+}
+
+/**
+ * Fetch the badge image at imageUrl and return its body as text.
+ * The attempts, the waits between them and the failures that are retried are the lookup's. Any
+ * status other than a success throws, 404 included: the lookup has just found the package, so an
+ * image that is not found is not a package with no trust profile.
+ */
+export async function fetchBadgeText(imageUrl: string, options: LookupOptions = {}): Promise<string> {
+  const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
+  return withRetries(attempts, retryDelayMs, () => fetchBadgeTextOnce(imageUrl, timeoutMs));
+}
+
+async function fetchBadgeTextOnce(imageUrl: string, timeoutMs: number): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(imageUrl, {
+      method: 'GET',
+      headers: {
+        Accept: 'image/svg+xml',
+        'User-Agent': 'opena2a-trust-badge-action/1.0',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new TransientLookupError(`Failed to fetch the badge image at ${imageUrl}: ${message}`);
+  }
+
+  if (!response.ok) {
+    const message = `Registry returned status ${response.status} for the badge image at ${imageUrl}`;
+    throw response.status === 429 || response.status >= 500
+      ? new TransientLookupError(message)
+      : new Error(message);
+  }
+
+  try {
+    return await response.text();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new TransientLookupError(`Failed to read the badge image at ${imageUrl}: ${message}`);
+  }
 }
