@@ -60,7 +60,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 
 | Input | Description | Default |
 |-------|-------------|---------|
-| `readme-path` | Path to the README file | `README.md` |
+| `readme-path` | Path to the README file, relative to the repository root; a path that resolves outside the checkout fails the run | `README.md` |
 | `package-name` | Package name (auto-detected if omitted) | |
 | `package-source` | Package source: `npm`, `pypi`, `github` | `npm` |
 | `registry-url` | OpenA2A Registry API URL | `https://api.oa2a.org` |
@@ -91,8 +91,9 @@ A package with no trust profile does not fail the run: the README is left as it 
 - The package name contains `/` (a scoped npm or `owner/repo` name) and the lookup returns no agent id in UUID form.
 - The badge image's score or level differs from the lookup's; each run prints both and fails until the registry's image agrees.
 - GitHub refuses the commit or PR (protected branch, token without `contents: write`, README changed since checkout); only the workspace README changes.
+- `readme-path` resolves outside the repository checkout, `GITHUB_WORKSPACE`.
 
-For a failing status, the log quotes the registry's `error` text when it sends one. [Failed runs](docs/failed-runs.md) gives the retry timing and why a package name with `/` gets no badge.
+For a failing status, the log quotes the registry's `error` text when it sends one. [Failed runs](docs/failed-runs.md) gives the retry timing, why a package name with `/` gets no badge and the `readme-path` failure message.
 
 ## Badge Placement
 
