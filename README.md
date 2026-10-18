@@ -65,6 +65,8 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 | `auto-merge` | Auto-merge the PR (only when `create-pr: true`) | `true` |
 | `github-token` | GitHub token for commits/PRs if the `GITHUB_TOKEN` environment variable is unset; without either, the README is updated in the workspace only | |
 
+`create-pr` and `auto-merge` accept `true`, `True`, `TRUE`, `false`, `False`, `FALSE`; any other value fails the run and names the input.
+
 ## Outputs
 
 | Output | Description |
@@ -79,6 +81,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
 
 A package with no trust profile does not fail the run: the README is left as it is and `updated` is `false`. The run fails, with the README unchanged and no outputs set, when:
 
+- `create-pr` or `auto-merge` has a value other than `true`, `True`, `TRUE`, `false`, `False` or `FALSE`.
 - The registry gives no answer, a partial answer, a 429 or a 5xx on each of 3 tries.
 - The registry answers with another unexpected status, or with a body that is not JSON.
 - The registry answers with JSON that is not a trust profile (an object with `agentId`, `trustScore` and `trustLevel`).

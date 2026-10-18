@@ -30231,8 +30231,9 @@ async function run() {
         const packageNameInput = core.getInput('package-name');
         const packageSource = core.getInput('package-source') || 'npm';
         const registryUrl = (core.getInput('registry-url') || 'https://api.oa2a.org').replace(/\/+$/, '');
-        const createPr = core.getInput('create-pr') === 'true';
-        const autoMerge = core.getInput('auto-merge') !== 'false';
+        // Read before step 1, so a value outside the accepted set fails the run before the lookup
+        const createPr = booleanInput('create-pr', false);
+        const autoMerge = booleanInput('auto-merge', true);
         // Step 1: Detect package name
         const packageName = packageNameInput || (0, detect_1.detectPackageName)();
         if (packageName && !packageNameInput) {
@@ -30341,6 +30342,28 @@ function quotable(text) {
     return Array.from(text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ''))
         .slice(0, 80)
         .join('');
+}
+// The values core.getBooleanInput accepts
+const TRUE_VALUES = ['true', 'True', 'TRUE'];
+const FALSE_VALUES = ['false', 'False', 'FALSE'];
+// A boolean input, read as core.getBooleanInput reads it, except that an empty value gives
+// defaultValue, the default action.yml declares: outside a runner no action.yml default is applied,
+// so an input that is not set reads as ''. Any other value fails the run and names the input. The
+// value comes from the workflow, so the error quotes at most 80 characters of it, with no control
+// character.
+function booleanInput(name, defaultValue) {
+    const value = core.getInput(name);
+    if (value === '') {
+        return defaultValue;
+    }
+    if (TRUE_VALUES.includes(value)) {
+        return true;
+    }
+    if (FALSE_VALUES.includes(value)) {
+        return false;
+    }
+    const shown = Array.from(value.replace(/[\x00-\x1f\x7f-\x9f]/g, '')).slice(0, 80).join('');
+    throw new Error(`Input ${name} is "${shown}"; accepted values: ${[...TRUE_VALUES, ...FALSE_VALUES].join(', ')}.`);
 }
 // profile-url is the page the badge links to. The lookup's own profileUrl names a host with no DNS
 // record, so it is not passed through.
