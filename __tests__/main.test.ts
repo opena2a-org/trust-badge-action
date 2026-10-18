@@ -417,19 +417,21 @@ describe('run', () => {
       );
     });
 
-    it('warns and keeps the README updated locally when GitHub refuses the write', async () => {
+    it('fails the run and sets no outputs when GitHub refuses the write, the README updated in the workspace only', async () => {
       mockOctokit.rest.repos.createOrUpdateFileContents.mockRejectedValue(
         new Error(`README.md does not match ${README_SHA_AT_RUN}`)
       );
 
       await run();
 
-      expect(core.warning).toHaveBeenCalledWith(
-        `Failed to commit directly: README.md does not match ${README_SHA_AT_RUN}. README was updated locally.`
+      expect(core.setFailed).toHaveBeenCalledWith(
+        `Action failed: Failed to commit the README to branch main: README.md does not match ${README_SHA_AT_RUN}. The README was updated in the workspace only.`
       );
+      expect(core.warning).not.toHaveBeenCalledWith(expect.stringMatching(/^Failed to commit directly/));
       expect(core.info).not.toHaveBeenCalledWith(expect.stringContaining('Changes committed directly'));
+      expect(mockOutputs.updated).toBeUndefined();
+      expect(mockOutputs).toEqual({});
       expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
-      expect(core.setFailed).not.toHaveBeenCalled();
     });
 
     it.each(['refs/pull/7/merge', 'refs/tags/v2.0.0'])(
@@ -535,6 +537,35 @@ describe('run', () => {
       );
       expect(core.setFailed).not.toHaveBeenCalled();
       expect(mockOutputs.updated).toBe('true');
+    });
+
+    it('fails the run, merges nothing and sets no outputs when GitHub refuses to open the pull request', async () => {
+      mockOctokit.rest.pulls.create.mockRejectedValue(new Error('Validation Failed'));
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'Action failed: Failed to open the pull request into main: Validation Failed. The README was updated in the workspace only.'
+      );
+      expect(core.warning).not.toHaveBeenCalledWith(expect.stringMatching(/^Failed to create PR/));
+      expect(mockOctokit.rest.pulls.merge).not.toHaveBeenCalled();
+      expect(mockOutputs).toEqual({});
+      expect(readReadme()).toBe(`# My Project\n${WRAPPED}\n`);
+    });
+
+    it('fails the run and opens no pull request when GitHub refuses the README write to the badge branch', async () => {
+      mockOctokit.rest.repos.createOrUpdateFileContents.mockRejectedValue(
+        new Error('Resource not accessible by integration')
+      );
+
+      await run();
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'Action failed: Failed to open the pull request into main: Resource not accessible by integration. The README was updated in the workspace only.'
+      );
+      expect(mockOctokit.rest.pulls.create).not.toHaveBeenCalled();
+      expect(mockOctokit.rest.pulls.merge).not.toHaveBeenCalled();
+      expect(mockOutputs).toEqual({});
     });
 
     it('opens the pull request for a run on another branch into that branch, from a badge branch of its own', async () => {
