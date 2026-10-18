@@ -171,6 +171,8 @@ describe('README.md', () => {
     expect(text).toContain('`scanSummary`');
     expect(text).toContain('`not_scanned`');
     expect(text).toContain('`lastScannedAt`');
+    // The date is not promised for every scanned answer: the registry answers some with no lastScannedAt
+    expect(text).toContain('`lastScannedAt` when the answer has one');
   });
 
   it('links the page that lists the documented behaviour the v1 tag does not have', () => {
