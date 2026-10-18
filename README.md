@@ -28,11 +28,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: opena2a-org/trust-badge-action@v1
+        with:
+          registry-url: https://api.oa2a.org
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-The `v1` tag is the `v1.1.0` release and does not yet have some of the behaviour below; [the v1 tag](docs/v1-tag.md) lists each difference and how to pin a commit that has it.
+The `v1` tag is the `v1.1.0` release, whose default registry host has no DNS record, so the `registry-url` line is required: a `@v1` step without it fails at the registry lookup. [The v1 tag page](docs/v1-tag.md) lists the other differences from the behaviour below and how to pin a commit of `main` instead.
 
 For a package with a trust profile, the step writes a badge into your README. Below are the badge it writes for `opena2a-cli` on npm and the markdown for your package's badge:
 
@@ -51,6 +53,7 @@ The action reads the package name from the first of `package.json`, `pyproject.t
         with:
           package-name: '@my-org/my-agent'
           package-source: npm
+          registry-url: https://api.oa2a.org
 ```
 
 ## Inputs

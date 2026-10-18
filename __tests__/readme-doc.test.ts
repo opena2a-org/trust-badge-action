@@ -123,6 +123,37 @@ describe('README.md', () => {
     expect(page).toContain('`<registry-url>/v1/trust/badge/<package-name>?source=<package-source>`');
   });
 
+  it('sets registry-url to the action.yml default in each @v1 step, and says why first in the v1 tag page', () => {
+    const registryDefault = inputDefaults().find(([name]) => name === 'registry-url')?.[1];
+    expect(registryDefault).toBe(REGISTRY);
+    const depth = (line: string): number => line.length - line.trimStart().length;
+    const lines = readme().split('\n');
+    const starts = lines.flatMap((line, i) => (/uses: +opena2a-org\/trust-badge-action@v1/.test(line) ? [i] : []));
+    expect(starts.length).toBeGreaterThan(0);
+    for (const start of starts) {
+      // The step runs to the next list item or the end of its code block
+      const rest = lines.slice(start + 1);
+      const end = rest.findIndex((line) => /^\s*(- |```)/.test(line));
+      const step = rest.slice(0, end === -1 ? rest.length : end);
+      // Each registry-url value set in the step's with: block
+      const values = step.flatMap((line, i) => {
+        const value = /^ +registry-url: *(['"]?)([^\s'"#]+)\1\s*(?:#.*)?$/.exec(line)?.[2];
+        const parent = step
+          .slice(0, i)
+          .reverse()
+          .find((above) => above.trim() !== '' && depth(above) < depth(line));
+        return value !== undefined && parent?.trim() === 'with:' ? [value] : [];
+      });
+      expect([lines[start], values]).toEqual([lines[start], [registryDefault]]);
+    }
+
+    // Before anything else, the page says that the registry host the v1 tag defaults to has no DNS record
+    const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
+    const firstParagraph = page.split(/\n{2,}/).find((block) => !block.startsWith('#'));
+    expect(firstParagraph).toContain('registry.opena2a.org');
+    expect(firstParagraph).toContain('no DNS record');
+  });
+
   it('says in the v1 tag page which badges the action leaves alone and where it replaces one', () => {
     const page = fs.readFileSync(path.join(__dirname, '..', 'docs', 'v1-tag.md'), 'utf-8');
     const row = page.split('\n').find((line) => line.startsWith('| An existing OpenA2A badge'));
