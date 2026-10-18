@@ -30666,6 +30666,8 @@ const HTML_BLOCKS = [
     },
     { start: { test: isSingleTagLine }, interruptsParagraph: false },
 ];
+// After its indentation, a line that starts with an open tag of a heading, <h1> to <h6>.
+const HTML_HEADING = /^<h[1-6](?:[ \t>]|\/>|\r?$)/i;
 // After its indentation, a list item marker, which a space, a tab or the end of the line follows.
 const LIST_MARKER = /^(?:[-+*]|\d{1,9}[.)])(?=[ \t]|$)/;
 // After its indentation, a line that ends the paragraph before it and starts no other: a heading,
@@ -30691,11 +30693,14 @@ function splitIndentation(line, column = 0) {
  * content. A blank line is one that holds nothing but spaces and tabs.
  */
 function findCode(content) {
-    const code = { examples: [], all: [] };
-    const add = (start, end, example) => {
+    const code = { examples: [], all: [], elements: [] };
+    const add = (start, end, example, elements = false) => {
         code.all.push([start, end]);
         if (example) {
             code.examples.push([start, end]);
+        }
+        if (elements) {
+            code.elements.push([start, end]);
         }
     };
     // The content columns of the list items a line can belong to, the innermost last.
@@ -30725,7 +30730,7 @@ function findCode(content) {
         if (block !== null &&
             block.kind !== 'indented' &&
             (depth < block.depth || (!blank && width < block.base))) {
-            add(block.start, lineStart - 1, block.kind === 'fence' || block.rawText);
+            add(block.start, lineStart - 1, block.kind === 'fence' || block.rawText, block.kind === 'html' && !block.close);
             block = null;
             paragraph = false;
         }
@@ -30744,7 +30749,7 @@ function findCode(content) {
         if (block?.kind === 'html') {
             // A block with no closing text ends before a blank line
             if (block.close ? block.close.test(text) : blank) {
-                add(block.start, block.close ? lineEnd : lineStart - 1, block.rawText);
+                add(block.start, block.close ? lineEnd : lineStart - 1, block.rawText, !block.close);
                 block = null;
                 paragraph = false;
             }
@@ -30826,17 +30831,17 @@ function findCode(content) {
         }
     }
     if (block !== null) {
-        add(block.start, block.kind === 'indented' ? block.end : content.length, block.kind !== 'html' || block.rawText);
+        add(block.start, block.kind === 'indented' ? block.end : content.length, block.kind !== 'html' || block.rawText, block.kind === 'html' && !block.close);
     }
     return code;
 }
-// Whether the index is in one of the ranges, which are in order and do not overlap.
-function inCode(index, code) {
+// The range the index is in, of ranges that are in order and do not overlap, or null.
+function rangeAt(index, ranges) {
     let low = 0;
-    let high = code.length - 1;
+    let high = ranges.length - 1;
     while (low <= high) {
         const middle = (low + high) >> 1;
-        const [start, end] = code[middle];
+        const [start, end] = ranges[middle];
         if (index < start) {
             high = middle - 1;
         }
@@ -30844,10 +30849,14 @@ function inCode(index, code) {
             low = middle + 1;
         }
         else {
-            return true;
+            return ranges[middle];
         }
     }
-    return false;
+    return null;
+}
+// Whether the index is in one of the ranges, which are in order and do not overlap.
+function inCode(index, code) {
+    return rangeAt(index, code) !== null;
 }
 // The first index of `search` at or after `from` that is outside the code, or -1.
 function indexOutsideCode(content, search, code, from = 0) {
@@ -30953,11 +30962,13 @@ function hasTrustBadge(content, owner) {
  * Strategy:
  * 1. If markers exist, return the start of the marker block (for replacement).
  * 2. If other badges exist (lines starting with [![), insert after the last badge line.
- * 3. If a top-level heading exists, insert after the first heading line.
+ * 3. If a heading exists, insert after the first one: a line starting with #, or an HTML block
+ *    with a line that starts with an <h1> to <h6> tag, after the last line of that block.
  * 4. Otherwise, insert at the beginning of the file.
  */
 function findBadgePosition(content) {
-    // Lines inside code or other HTML blocks never place the badge
+    // Lines inside code or other HTML blocks are never badge or heading lines, but an <h1> to <h6>
+    // tag makes the HTML block it is in a heading
     const code = findCode(content);
     // Check for existing markers
     const markerIndex = indexOutsideCode(content, MARKER_START, code.examples);
@@ -30981,6 +30992,15 @@ function findBadgePosition(content) {
             // Track the first top-level heading
             if (firstHeadingEnd === -1 && line.startsWith('#')) {
                 firstHeadingEnd = textEnd;
+            }
+        }
+        else if (firstHeadingEnd === -1 && HTML_HEADING.test(line)) {
+            // A line that starts with an <h1> to <h6> tag makes the HTML block it is in the first heading
+            // when the block's text is elements, not code or a comment. The badge goes after the block's
+            // last line, before the CR of a CRLF line ending.
+            const block = rangeAt(offset, code.elements);
+            if (block !== null) {
+                firstHeadingEnd = content[block[1] - 1] === '\r' ? block[1] - 1 : block[1];
             }
         }
         offset = lineEnd + 1;
@@ -31079,10 +31099,13 @@ function updateBadge(content, badgeMarkdown, owner) {
         const byteOrderMark = BYTE_ORDER_MARK.exec(content)?.[0] ?? '';
         return byteOrderMark + wrapped + lineEnding + lineEnding + content.slice(byteOrderMark.length);
     }
-    // Insert after the found position (add newlines for separation)
+    // Insert after the found position (add newlines for separation). After the last line of an HTML
+    // block, a blank line ends the block first: lines that continue it are shown as HTML, never as
+    // markdown, so the badge would show as text.
     const before = content.substring(0, position);
     const after = content.substring(position);
-    return before + lineEnding + wrapped + after;
+    const blankLine = inCode(position - 1, code.all) ? lineEnding : '';
+    return before + lineEnding + blankLine + wrapped + after;
 }
 
 

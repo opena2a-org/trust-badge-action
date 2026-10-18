@@ -93,7 +93,9 @@ For a failing status, the log quotes the registry's `error` text when it sends o
 
 ## Badge Placement
 
-The action auto-places the badge after existing badges or the first heading. An existing OpenA2A badge for the same package is replaced where it is. [Badge placement](docs/badge-placement.md) covers a badge that shares its line with other text and the badge text the action leaves alone. To control placement manually, add markers:
+The action auto-places the badge after existing badges or the first heading, a markdown `#` heading or the HTML block that holds an `<h1>` to `<h6>` tag. An existing OpenA2A badge for the same package is replaced where it is.
+
+[Badge placement](docs/badge-placement.md) covers a badge that shares its line with other text and the badge text the action leaves alone. To control placement manually, add markers:
 
 ```markdown
 <!-- opena2a-trust-badge -->
