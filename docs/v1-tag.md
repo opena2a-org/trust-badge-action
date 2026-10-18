@@ -1,13 +1,13 @@
 # The v1 tag
 
-The `v1` tag points to the same commit as the `v1.1.0` release, `216064e`. Behaviour documented in the README that was added on `main` after that commit is not in it, so a workflow that pins `opena2a-org/trust-badge-action@v1` runs as the right-hand column below says until `v1` moves to a newer release.
+A step that pins `opena2a-org/trust-badge-action@v1` needs `registry-url: https://api.oa2a.org` in its `with:` block: the tag's default registry host, `registry.opena2a.org`, has no DNS record, so without that line every lookup fails with `Failed to connect to registry` and the run fails with the README unchanged and no outputs set. The `v1` tag points to the same commit as the `v1.1.0` release, `216064e`. Behaviour documented in the README that was added on `main` after that commit is not in it, so a workflow that pins `opena2a-org/trust-badge-action@v1` runs as the right-hand column below says until `v1` moves to a newer release.
 
 | The README documents | At the `v1` tag |
 |----------------------|-----------------|
-| The badge links to `https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>` | The badge links to `<registry-url>/agents/<agent-id>` |
+| The badge links to `https://api.oa2a.org/v1/trust/lookup?package=<package-name>&source=<package-source>` | The badge links to `<registry-url>/agents/<agent-id>`; with `registry-url: https://api.oa2a.org` that is `https://api.oa2a.org/agents/<agent-id>`, which answers 404 |
 | When the lookup returns no agent id in UUID form, the image for a package name without `/` is `<registry-url>/v1/trust/badge/<package-name>?source=<package-source>` | The image is `<registry-url>/v1/trust/<agent-id>/badge.svg` whatever agent id the lookup returns |
-| The `profile-url` output is the URL the badge links to | The `profile-url` output is the `profileUrl` field of the lookup answer |
-| `registry-url` defaults to `https://api.oa2a.org` | `registry-url` defaults to `https://registry.opena2a.org` |
+| The `profile-url` output is the URL the badge links to | The `profile-url` output is the `profileUrl` field of the lookup answer, a `https://registry.opena2a.org/agents/<agent-id>` URL whose host has no DNS record |
+| `registry-url` defaults to `https://api.oa2a.org` | `registry-url` defaults to `https://registry.opena2a.org`, a host with no DNS record, so without `registry-url: https://api.oa2a.org` every lookup fails with `Failed to connect to registry` and the run fails |
 | A `github-token` input | `github-token` is not declared in `action.yml`, so the runner logs an unexpected-input warning for a `with: github-token:` value, but that value is still read when the `GITHUB_TOKEN` environment variable is unset |
 | A lookup with no answer, a partial answer, a 429 or a 5xx is tried 3 times, with pauses of 2 and 4 seconds | A single attempt with a 15 second timeout |
 | A lookup answer that is JSON but not a trust profile, an object with `agentId`, `trustScore` and `trustLevel`, fails the run | Such an answer is read as a found profile: an answer of `{}` writes a badge whose image is `<registry-url>/v1/trust/undefined/badge.svg` and sets `trust-score` to `undefined`, and an answer of `null` is read as no trust profile |
