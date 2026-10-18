@@ -31056,12 +31056,84 @@ class TransientLookupError extends Error {
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
+// The fields every trust profile carries and the type of each, checked in this order. The optional
+// badgeImageUrl and badgeLinkUrl are checked where the badge is resolved.
+const PROFILE_FIELDS = [
+    ['agentId', 'string'],
+    ['trustScore', 'number'],
+    ['trustLevel', 'string'],
+];
+// The first reason a parsed answer is not a trust profile, or undefined when it is one.
+function notTrustProfileReason(body) {
+    if (body === null) {
+        return 'the body is null';
+    }
+    if (Array.isArray(body)) {
+        return 'the body is an array';
+    }
+    if (typeof body !== 'object') {
+        return `the body is a ${typeof body}`;
+    }
+    for (const [field, type] of PROFILE_FIELDS) {
+        const value = body[field];
+        if (value === undefined) {
+            return `"${field}" is missing`;
+        }
+        if (typeof value !== type) {
+            return `"${field}" is not a ${type}`;
+        }
+    }
+    return undefined;
+}
+// At most this many bytes of a failing answer's body are read for the registry's error text.
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
+// At most this many characters of the registry's error text are quoted.
+const MAX_ERROR_TEXT_LENGTH = 300;
+// Control characters, and the bidirectional controls that change the order a log line reads in.
+const CONTROL_CHARACTERS = /[\p{Cc}\p{Bidi_Control}]/gu;
+// The registry's reason for a failing answer: the string "error" of a JSON body such as
+// {"error":"invalid source: ..."}, with control characters dropped, cut to MAX_ERROR_TEXT_LENGTH
+// characters. Undefined when the body cannot be read, is longer than MAX_ERROR_BODY_BYTES or
+// carries no such text, so the caller's message stays as it is.
+async function registryErrorText(response) {
+    try {
+        const reader = response.body?.getReader();
+        if (!reader) {
+            return undefined;
+        }
+        const decoder = new TextDecoder();
+        let text = '';
+        let bytes = 0;
+        for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+            bytes += chunk.value.byteLength;
+            if (bytes > MAX_ERROR_BODY_BYTES) {
+                await reader.cancel();
+                return undefined;
+            }
+            text += decoder.decode(chunk.value, { stream: true });
+        }
+        text += decoder.decode();
+        const body = JSON.parse(text);
+        const error = typeof body === 'object' && body !== null ? body.error : undefined;
+        if (typeof error !== 'string') {
+            return undefined;
+        }
+        const quoted = Array.from(error.replace(CONTROL_CHARACTERS, '').trim())
+            .slice(0, MAX_ERROR_TEXT_LENGTH)
+            .join('');
+        return quoted || undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 /**
  * Look up trust information for a package from the OpenA2A Registry.
  * Returns null if the package has no trust profile (404).
  * A network error or a timeout (while the body is read as well), a 429 or a 5xx is retried with
  * backoff; the lookup throws when the last attempt fails the same way, and at once on any other
- * unexpected status code.
+ * unexpected status code or on a body that is not JSON or not a trust profile. The message for a
+ * failing status quotes the registry's error text when its answer carries one.
  */
 async function lookupTrust(registryUrl, packageName, source, options = {}) {
     const { attempts, retryDelayMs, timeoutMs } = { ...DEFAULT_LOOKUP_OPTIONS, ...options };
@@ -31098,13 +31170,18 @@ async function lookupOnce(url, registryUrl, timeoutMs) {
         return null;
     }
     if (!response.ok) {
-        const message = `Registry returned unexpected status ${response.status}: ${response.statusText}`;
+        const errorText = await registryErrorText(response);
+        let message = `Registry returned unexpected status ${response.status}: ${response.statusText}`;
+        if (errorText !== undefined) {
+            message += ` (${errorText})`;
+        }
         throw response.status === 429 || response.status >= 500
             ? new TransientLookupError(message)
             : new Error(message);
     }
+    let body;
     try {
-        return (await response.json());
+        body = await response.json();
     }
     catch (error) {
         // A body that is not JSON fails to parse with a SyntaxError, matched by name since the fetch
@@ -31116,6 +31193,13 @@ async function lookupOnce(url, registryUrl, timeoutMs) {
         const message = error instanceof Error ? error.message : String(error);
         throw new TransientLookupError(`Failed to read the answer from registry at ${registryUrl}: ${message}`);
     }
+    // Thrown outside the try above, so an answer that is not a trust profile fails at once and is
+    // not read as an answer that never arrived in full.
+    const reason = notTrustProfileReason(body);
+    if (reason !== undefined) {
+        throw new Error(`Registry at ${registryUrl} returned status ${response.status} with a JSON body that is not a trust profile: ${reason}.`);
+    }
+    return body;
 }
 
 
