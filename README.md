@@ -81,9 +81,10 @@ A package with no trust profile does not fail the run: the README is left as it 
 
 - The registry gives no answer, a partial answer, a 429 or a 5xx on each of 3 tries.
 - The registry answers with another unexpected status, or with a body that is not JSON.
+- The registry answers with JSON that is not a trust profile (an object with `agentId`, `trustScore` and `trustLevel`).
 - The package name contains `/` (a scoped npm or `owner/repo` name) and the lookup returns no agent id in UUID form.
 
-[Failed runs](docs/failed-runs.md) gives the retry timing and why a package name with `/` gets no badge.
+For a failing status, the log quotes the registry's `error` text when it sends one. [Failed runs](docs/failed-runs.md) gives the retry timing and why a package name with `/` gets no badge.
 
 ## Badge Placement
 
