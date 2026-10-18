@@ -161,6 +161,20 @@ describe('detectPackageName', () => {
     expect(detectPackageName(tmpDir)).toBeNull();
   });
 
+  it('reads a pyproject.toml holding a 65536-character whitespace-only line within a second', () => {
+    // The name is under [tool.poetry], so that both passes, [project] and then [tool.poetry], read
+    // the long line. A reader whose key pattern lets several quantifiers share one run of whitespace
+    // takes about eight times longer for each doubling of the line: tens of seconds at 4096
+    // characters, where it fails this test, and hours at 65536, where a linear reader takes
+    // milliseconds.
+    for (const length of [4096, 65536]) {
+      fs.writeFileSync(path.join(tmpDir, 'pyproject.toml'), `${' '.repeat(length)}\n[tool.poetry]\nname = "pkg"\n`);
+      const started = Date.now();
+      expect(detectPackageName(tmpDir)).toBe('pkg');
+      expect(Date.now() - started).toBeLessThan(1000);
+    }
+  });
+
   it('returns null when no detection files exist', () => {
     expect(detectPackageName(tmpDir)).toBeNull();
   });

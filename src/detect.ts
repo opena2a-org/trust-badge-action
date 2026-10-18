@@ -97,11 +97,16 @@ function pyprojectTableName(content: string, table: string): string | null {
       continue;
     }
     // A key, plain or dotted, set to a TOML basic ("..."), literal ('...') or one-line multi-line
-    // ("""...""" or '''...''') string
-    const keyMatch = line.match(/^\s*([^=]+?)\s*=\s*(?:"""(.+?)"""|'''(.+?)'''|"([^"]+)"|'([^']+)')/);
-    const keyParts = keyMatch ? tomlKeyParts(keyMatch[1]) : null;
-    if (keyMatch && keyParts && [...tablePath, ...keyParts].join('\0') === target) {
-      return keyMatch[2] ?? keyMatch[3] ?? keyMatch[4] ?? keyMatch[5];
+    // ("""...""" or '''...''') string. The key and the value are read apart, split at the line's
+    // first =, so that each run of whitespace is read by one pattern: one pattern over the whole
+    // line, with a leading \s*, a lazy key group and a \s* before the =, tries every way to share
+    // a run of whitespace between the three and takes hours on a long whitespace-only line.
+    const equals = line.indexOf('=');
+    const valueMatch =
+      equals === -1 ? null : line.slice(equals + 1).match(/^\s*(?:"""(.+?)"""|'''(.+?)'''|"([^"]+)"|'([^']+)')/);
+    const keyParts = valueMatch ? tomlKeyParts(line.slice(0, equals)) : null;
+    if (valueMatch && keyParts && [...tablePath, ...keyParts].join('\0') === target) {
+      return valueMatch[1] ?? valueMatch[2] ?? valueMatch[3] ?? valueMatch[4];
     }
   }
   return null;
