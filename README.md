@@ -1,6 +1,7 @@
 # OpenA2A Trust Badge
 
 [![Status: stable](https://img.shields.io/badge/status-stable-green)](STATUS.md)
+[![CI](https://github.com/opena2a-org/trust-badge-action/actions/workflows/test.yml/badge.svg)](https://github.com/opena2a-org/trust-badge-action/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 > **[OpenA2A](https://github.com/opena2a-org)**: [CLI](https://github.com/opena2a-org/opena2a) · [HackMyAgent](https://github.com/opena2a-org/hackmyagent) · [Secretless](https://github.com/opena2a-org/secretless-ai) · [AIM](https://github.com/opena2a-org/agent-identity-management) · [Browser Guard](https://github.com/opena2a-org/ai-browserguard) · [DVAA](https://github.com/opena2a-org/damn-vulnerable-ai-agent)
