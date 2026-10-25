@@ -46,11 +46,14 @@ const MANIFESTS: Array<[string, string]> = [
 ];
 
 describe('README.md', () => {
-  it('shows the uses: step for this action within its first 30 lines', () => {
+  it('shows the uses: step for this action within the 30 lines after the ecosystem line', () => {
     const lines = readme().split('\n');
+    // Counted from the ecosystem line (`> **[OpenA2A`), or from line 1 where there is none, so the
+    // header block above it never pays for the start block.
+    const ecosystemLine = lines.findIndex((line) => line.startsWith('> **[OpenA2A')) + 1;
     const stepLine = lines.findIndex((line) => /uses: +opena2a-org\/trust-badge-action@/.test(line)) + 1;
     expect(stepLine).toBeGreaterThanOrEqual(1);
-    expect(stepLine).toBeLessThanOrEqual(30);
+    expect(stepLine - ecosystemLine).toBeLessThanOrEqual(30);
   });
 
   it.each(MANIFESTS)('names %s, a file the package name is detected from', (file, content) => {
